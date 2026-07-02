@@ -10,4 +10,6 @@ webauthn>=2.3
 httpx>=0.28
 python-multipart>=0.0.18
 minio>=7.2
+redis>=5.0
+rq>=1.16
 psycopg[binary]>=3.2; platform_python_implementation == "CPython"

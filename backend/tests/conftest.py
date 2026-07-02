@@ -17,6 +17,9 @@ os.environ["PALESTRIX_SECRET_KEY"] = "test-secret-key-of-sufficient-length-01234
 os.environ["PALESTRIX_PLUGIN_PATHS"] = ",".join(
     str(FIXTURES / name) for name in ("crashy", "needy", "oldapi")
 )
+# Deterministic tests: the reaper runs only when a test invokes it (directly
+# or via POST /admin/reaper/run), never on the background schedule.
+os.environ["PALESTRIX_REAPER_ENABLED"] = "0"
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 

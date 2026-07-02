@@ -1,10 +1,15 @@
 """Instance provider registry: the first plugin extension point.
 
-Core registers the built-in demo provider (containers and VMs, instant
-provisioning; replaced by the Proxmox and Docker adapters in Phase 4).
+Core registers the built-in demo provider; the Phase 4 Proxmox and Docker
+adapters (palestrix/orchestration/) take over their kinds when configured.
 Plugins register additional providers with new kinds through
 PluginContext.providers. A plugin-owned provider is only active while its
 plugin is enabled.
+
+Adapters must be idempotent by instance id (docs/ephemeral-lifecycle.md):
+a re-run provision for the same instance reuses or replaces the resource,
+never duplicates it. Log lines go through add_log; the API relays them to
+clients over SSE, so the log rows are the live progress stream.
 """
 
 from __future__ import annotations
@@ -21,8 +26,10 @@ if TYPE_CHECKING:
 
 @runtime_checkable
 class InstanceProvider(Protocol):
-    """Phase 2b contract: provision + destroy. Phase 4 extends this with
-    expose(), stop(), and stream_logs() when real adapters land."""
+    """The Phase 4 contract. provision() and destroy() are required; stop()
+    is optional (Phase 2b plugins predate it) — core calls it through
+    provider_stop(), which no-ops when absent. provision() fills the access
+    fields (host/port/proto) and moves the instance to `running`."""
 
     name: str
     kinds: tuple[str, ...]
@@ -32,6 +39,16 @@ class InstanceProvider(Protocol):
     ) -> None: ...
 
     def destroy(self, db: "Session", instance: "Instance") -> None: ...
+
+
+def provider_stop(
+    provider: InstanceProvider, db: "Session", instance: "Instance"
+) -> None:
+    """Graceful stop where the provider supports it; providers from the
+    Phase 2b contract (provision/destroy only) just skip it."""
+    stop = getattr(provider, "stop", None)
+    if callable(stop):
+        stop(db, instance)
 
 
 @dataclass
@@ -80,6 +97,16 @@ def known_kinds() -> set[str]:
     return {kind for kind, entry in _by_kind.items() if _entry_active(entry)}
 
 
+def active_providers() -> list[InstanceProvider]:
+    """Each active provider once, even when it claims several kinds. The
+    reaper's reconciliation pass walks these."""
+    seen: list[InstanceProvider] = []
+    for entry in _by_kind.values():
+        if _entry_active(entry) and entry.provider not in seen:
+            seen.append(entry.provider)
+    return seen
+
+
 def add_log(db: "Session", instance_id: str, msg: str, level: str = "info") -> None:
     from .models import InstanceLog
 
@@ -88,8 +115,10 @@ def add_log(db: "Session", instance_id: str, msg: str, level: str = "info") -> N
 
 class DemoProvider:
     """Built-in placeholder provider: instant transitions with real registry
-    side effects (states, logs, endpoints). Swapped for the Proxmox and
-    Docker adapters in Phase 4."""
+    side effects (states, logs, endpoints). The development and test default;
+    the real Proxmox and Docker adapters (palestrix/orchestration/) take over
+    their kinds when configured (PALESTRIX_PROXMOX_HOST /
+    PALESTRIX_DOCKER_ENABLED)."""
 
     name = "demo"
     kinds = ("container", "vm")
@@ -114,6 +143,9 @@ class DemoProvider:
             f"instance running, {instance.proto} exposed on {instance.host}:{instance.port}",
             level="ok",
         )
+
+    def stop(self, db, instance) -> None:
+        add_log(db, instance.id, "instance stopped", level="warn")
 
     def destroy(self, db, instance) -> None:
         add_log(db, instance.id, "instance stopped and destroyed", level="warn")

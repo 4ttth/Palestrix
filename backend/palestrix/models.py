@@ -59,6 +59,17 @@ class InstanceState(str, enum.Enum):
     denied = "denied"
 
 
+# States that hold real (or promised) resources and count against tenant
+# quota. Quota is reserved at request time and released only by leaving
+# these states (docs/ephemeral-lifecycle.md).
+ACTIVE_STATES = (
+    InstanceState.requested,
+    InstanceState.provisioning,
+    InstanceState.running,
+    InstanceState.stopped,
+)
+
+
 # --------------------------------------------------------------------------
 # Tenancy and identity
 # --------------------------------------------------------------------------

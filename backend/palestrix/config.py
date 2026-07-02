@@ -40,9 +40,46 @@ class Settings(BaseSettings):
     # Compete
     flag_cooldown_seconds: int = 30
 
-    # Instances (demo provider until the Phase 4 orchestration adapters land)
+    # Instances
     instance_extend_cost_palestras: int = 150
     instance_extend_step_minutes: int = 30
+
+    # Orchestration (Phase 4). The queue runs jobs inline (same process,
+    # dev/test default) or on Redis via RQ ("redis"), consumed by
+    # `python -m palestrix.worker`.
+    queue_backend: str = "inline"  # "inline" | "redis"
+    redis_url: str = "redis://localhost:6379/0"
+    provision_max_attempts: int = 2  # re-queued once, then marked failed
+
+    # TTL reaper: scans for expired instances and destroys them. Runs as a
+    # background thread in-app for the inline backend; the worker process
+    # owns it in a Redis deployment.
+    reaper_enabled: bool = True
+    reaper_interval_seconds: int = 60
+
+    # Log stream (SSE): poll cadence and the cap on how long one client may
+    # hold a stream open while an instance is still provisioning.
+    log_stream_poll_seconds: float = 0.5
+    log_stream_max_seconds: float = 300.0
+
+    # Proxmox VE adapter: activated for the "vm" kind when a host is set.
+    # Auth is an API token (Datacenter -> Permissions -> API Tokens).
+    proxmox_host: str = ""  # e.g. https://pve-01.example.edu:8006
+    proxmox_token_id: str = ""  # user@pam!tokenname
+    proxmox_token_secret: str = ""
+    proxmox_node: str = "pve"
+    proxmox_verify_tls: bool = True
+    proxmox_bridge: str = "vmbr0"  # tenant VLAN tags ride on this bridge
+    proxmox_timeout_seconds: float = 120.0
+
+    # Docker adapter: activated for the "container" kind when enabled. Drives
+    # the local docker CLI; images build from teacher archives in storage.
+    docker_enabled: bool = False
+    docker_binary: str = "docker"
+    docker_host_address: str = "127.0.0.1"  # where published ports are reachable
+    docker_memory_limit: str = "512m"
+    docker_cpu_limit: str = "1.0"
+    docker_network_prefix: str = "net-"  # tenant network: net-<tenant_id>
 
     # Gamification (Phase 3) — the balance rules the service enforces. All
     # earning is student-only (rbac-matrix.md); staff have no earn path.

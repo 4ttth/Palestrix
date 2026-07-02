@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import schemas
-from ..db import get_db
+from ..db import SessionLocal, get_db
+from ..events import dispatch_pending
 from ..models import Tenant, User
+from ..orchestration.reaper import reap_expired, reconcile
 from ..rbac import Principal
 from ..storage import get_storage
 from .deps import require_capability
@@ -57,10 +59,25 @@ def upload_iso(
     file: UploadFile,
     principal: Principal = Depends(require_capability("infra:manage")),
 ):
-    """Store an ISO for VM template building. The Phase 4 Proxmox adapter
-    forwards stored ISOs to the cluster's ISO storage."""
+    """Store an ISO for VM template building. The Proxmox adapter clones
+    from admin-built templates; ISO forwarding to cluster storage is part of
+    the Phase 7 hardened deployment runbooks."""
     if not (file.filename or "").endswith(".iso"):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "expected an .iso file")
     storage = get_storage()
     key = storage.put("isos", file.filename, file.file, file.size or 0)
     return {"stored": key}
+
+
+@router.post("/reaper/run")
+def run_reaper(
+    background: BackgroundTasks,
+    principal: Principal = Depends(require_capability("infra:manage")),
+    db: Session = Depends(get_db),
+):
+    """Force a reap + reconcile pass now (the scheduled one runs every
+    PALESTRIX_REAPER_INTERVAL_SECONDS). Returns what was expired."""
+    reaped = reap_expired(db)
+    reconcile(db)
+    background.add_task(dispatch_pending, SessionLocal())
+    return {"reaped": reaped, "count": len(reaped)}

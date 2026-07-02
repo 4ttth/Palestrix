@@ -112,7 +112,19 @@ provider-authoring tutorial, exercised by the backend test suite.
 Phase 3: gamification. **Done** — ledger, caps, streaks, community score, and
 ranking in [backend/palestrix/gamification.py](backend/palestrix/gamification.py).
 
-Phase 4: orchestration + TTL reaper. 
+Phase 4: orchestration + TTL reaper. 95% Done:
+
+**Todos:**
+
+- ~~Add orchestration settings to [config.py](http://config.py) + .env.example~~
+- ~~Extend provider contract (stop/expose) in [providers.py](http://providers.py)~~
+- ~~Create orchestration package: queue (inline/redis), jobs, reaper~~
+- ~~Write Docker adapter (CLI-driven, injectable runner)~~
+- ~~Write Proxmox VE adapter (httpx, injectable client)~~
+- ~~Rework instances launch through the queue; add stop + SSE log stream endpoints~~
+- ~~Add admin reaper controls + wire lifespan (adapters, reaper thread) + worker entry point~~
+- Write tests/test_[orchestration.py](http://orchestration.py) and run the suite
+- Update docs (READMEs, public-api, ephemeral-lifecycle)
 
 Phase 5: live feature surfaces. 
 
@@ -120,6 +132,6 @@ Phase 6: sandbox module.
 
 Phase 7: multitenant layer + hardened deployments. 
 
-Phase 8: Canvas LMS integration. 
+Phase 8: Canvas LMS integration and a detailed (GitHub formatted) step-by-step installation and setup documentation for both use cases.
 
 Details in [docs/architecture.md](docs/architecture.md).

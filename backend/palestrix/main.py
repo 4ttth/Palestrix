@@ -60,7 +60,19 @@ async def lifespan(app: FastAPI):
         registry.restore(db)
     finally:
         db.close()
+
+    # Phase 4: configured adapters take over their kinds (Proxmox for "vm",
+    # Docker for "container"), and the TTL reaper starts ticking. In a Redis
+    # deployment the worker process runs its own reaper; this in-app one is
+    # still harmless (reaping is idempotent).
+    from .orchestration import activate_configured_adapters
+    from .orchestration.reaper import start_reaper
+
+    activate_configured_adapters()
+    reaper = start_reaper()
     yield
+    if reaper is not None:
+        reaper.stop()
 
 
 def create_app() -> FastAPI:
