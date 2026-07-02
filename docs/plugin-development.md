@@ -81,10 +81,14 @@ class BadgeLabsPlugin(Plugin):
 
 ## UI plugins
 
-UI plugins are lazy-loaded Next.js modules that mount into declared slots:
+UI plugins are lazy-loaded Next.js modules that mount into declared slots.
+A UI plugin is a folder under `plugins/` whose `palestrix.ui-plugin.ts`
+default-exports a manifest:
 
 ```ts
 // palestrix.ui-plugin.ts
+import type { UiPluginManifest } from "@palestrix/plugin-sdk";
+
 export default {
   id: "acme-badge-labs",
   slots: {
@@ -96,9 +100,22 @@ export default {
 
 - Slots are the stable contract: `dashboard.widgets`, `lab.sidebar`,
   `community.content-renderers`, `admin.settings-panels` (list grows
-  additively).
-- Slot components receive typed, read-only props and a scoped fetcher; they
-  cannot import core internals (enforced by lint rule + module boundary).
+  additively). Core pages render `<PluginSlot slot="…" />`
+  (`components/plugins/PluginSlot.tsx`); every installed plugin registered
+  for that slot mounts there.
+- Installation mirrors server-side entry-point discovery: the manifest is
+  listed in `lib/plugins/registry.ts`. Slot components stay behind the
+  manifest's dynamic `import()`, so a plugin ships as lazy, code-split
+  chunks fetched only when its slot actually renders.
+- Slot components receive typed, read-only props and a scoped fetcher
+  (`api.get`, GET-only over the same `/api/v1` contract; in the template
+  phase it replays the sample data the core screens render). They cannot
+  import core internals: `@palestrix/plugin-sdk` (`lib/plugins/sdk.ts`) is
+  the module boundary, and it re-exports the theme-locked primitives
+  (`Card`, `Badge`, `Avatar`, …) plugins may use.
+- Crash isolation, mirrored from the server registry: a slot component
+  that throws collapses to a small errored tile plus a console warning; it
+  never takes the page down.
 - Must follow the locked theme: tokens only, no custom accent colors.
 
 ## Versioning
@@ -107,11 +124,14 @@ The plugin contract carries a major version (`api = "1"`). Core supports the
 current and previous major for one release cycle. The registry refuses to
 enable a plugin whose contract major is unsupported, with a clear error.
 
-## Reference plugins (Phase 2b deliverables)
+## Reference plugins (shipped with Phase 2b)
 
-1. **`palestrix-provider-demo`**: a fake instance provider that "provisions"
-   instantly; used in CI and as the provider-authoring tutorial.
-2. **`palestrix-widget-firstblood`**: a dashboard widget streaming the
-   first-blood feed; the UI-slot tutorial.
+1. **`plugins/palestrix-provider-demo`**: a fake instance provider that
+   "provisions" instantly; used in CI and as the provider-authoring
+   tutorial. Exercised end to end by `backend/tests/test_plugins.py`.
+2. **`plugins/palestrix-widget-firstblood`**: a dashboard widget rendering
+   the first-blood feed through the scoped fetcher; the UI-slot tutorial.
+   Mounted on `/dashboard` via the `dashboard.widgets` slot. (Phase 5
+   upgrades its one-shot fetch to the `flag.captured` SSE stream.)
 
 Both live in the main repo under `plugins/` and double as contract tests.

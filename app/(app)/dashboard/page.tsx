@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Avatar } from "@/components/ui/avatar";
 import { Countdown } from "@/components/lab/Countdown";
+import { PluginSlot } from "@/components/plugins/PluginSlot";
 import {
   activeInstance,
   currentUser,
@@ -131,46 +132,59 @@ export default function DashboardPage() {
             </Card>
           </div>
 
-          {/* Leaderboard mini */}
-          <Card className="self-start">
-            <CardHeader className="flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Trophy size={16} className="text-palestras" weight="fill" />
-                CLCTF 2026 qualifiers
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ol className="space-y-2.5">
-                {leaderboard.map((row) => (
-                  <li
-                    key={row.handle}
-                    className={
-                      "flex items-center gap-3 rounded-(--radius-input) px-2 py-1.5 " +
-                      (row.handle === currentUser.handle ? "bg-accent-soft" : "")
-                    }
-                  >
-                    <span className="w-5 font-mono text-xs tabular-nums text-muted">
-                      {row.rank}
-                    </span>
-                    <Avatar handle={row.handle} size="sm" />
-                    <span className="flex-1 truncate font-mono text-[13px]">
-                      {row.handle}
-                    </span>
-                    <span className="font-mono text-[13px] tabular-nums">
-                      {row.score.toLocaleString()}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-              <Link
-                href="/compete"
-                className="mt-4 inline-flex items-center gap-1.5 text-[13px] font-medium text-accent hover:underline"
-              >
-                Full leaderboard
-                <ArrowRight size={13} />
-              </Link>
-            </CardContent>
-          </Card>
+          <div className="space-y-6 self-start">
+            {/* Leaderboard mini */}
+            <Card>
+              <CardHeader className="flex-row items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Trophy size={16} className="text-palestras" weight="fill" />
+                  CLCTF 2026 qualifiers
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ol className="space-y-2.5">
+                  {leaderboard.map((row) => (
+                    <li
+                      key={row.handle}
+                      className={
+                        "flex items-center gap-3 rounded-(--radius-input) px-2 py-1.5 " +
+                        (row.handle === currentUser.handle ? "bg-accent-soft" : "")
+                      }
+                    >
+                      <span className="w-5 font-mono text-xs tabular-nums text-muted">
+                        {row.rank}
+                      </span>
+                      <Avatar handle={row.handle} size="sm" />
+                      <span className="flex-1 truncate font-mono text-[13px]">
+                        {row.handle}
+                      </span>
+                      <span className="font-mono text-[13px] tabular-nums">
+                        {row.score.toLocaleString()}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+                <Link
+                  href="/compete"
+                  className="mt-4 inline-flex items-center gap-1.5 text-[13px] font-medium text-accent hover:underline"
+                >
+                  Full leaderboard
+                  <ArrowRight size={13} />
+                </Link>
+              </CardContent>
+            </Card>
+
+            {/* UI plugin slot: every installed plugin that registers a
+                dashboard widget mounts here (docs/plugin-development.md). */}
+            <PluginSlot
+              slot="dashboard.widgets"
+              viewer={{
+                handle: currentUser.handle,
+                name: currentUser.name,
+                role: currentUser.role,
+              }}
+            />
+          </div>
         </div>
       </div>
     </>

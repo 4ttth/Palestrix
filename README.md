@@ -6,13 +6,17 @@ Students train on real ephemeral VMs and containers, earn and spend the
 Palestras currency, and compete in a CTF arena; teachers publish labs
 without touching infrastructure; admins run the range from one console.
 
-**Status: Phase 2 complete.** The repository contains the full frontend
+**Status: Phase 2b complete.** The repository contains the full frontend
 template set on a locked design theme (Phase 1), the implementation
-documentation for both deployment use cases, and the FastAPI core API
+documentation for both deployment use cases, the FastAPI core API
 (Phase 2): passkey auth, RBAC, the versioned `/api/v1` surface, API-key +
 OAuth2 client-credentials auth, the webhook/event bus, and object storage
-wiring. See [backend/README.md](backend/README.md) to run it. Next:
-Phase 2b (plugin framework) and Phase 3 (gamification rules).
+wiring — and the plugin framework (Phase 2b): server-plugin discovery,
+capability scoping, config encryption, crash isolation, the UI slot
+system, and both reference plugins under `plugins/`. See
+[backend/README.md](backend/README.md) to run the API and
+[docs/plugin-development.md](docs/plugin-development.md) to write a
+plugin. Next: Phase 3 (gamification rules).
 
 ## Run the templates
 
@@ -81,12 +85,24 @@ Key components:
 
 
 
+## Plugins (Phase 2b)
+
+Server plugins are Python packages on a versioned manifest with capability
+scopes, encrypted config, and crash isolation
+([backend/palestrix/plugins/](backend/palestrix/plugins/)). UI plugins
+mount lazy, code-split widgets into declared slots through
+`@palestrix/plugin-sdk` ([lib/plugins/](lib/plugins/),
+[components/plugins/PluginSlot.tsx](components/plugins/PluginSlot.tsx)).
+Two reference plugins live under [plugins/](plugins/) and double as
+contract tests:
+
+- `palestrix-provider-demo`: an instant echo instance provider; the
+  provider-authoring tutorial, exercised by the backend test suite.
+- `palestrix-widget-firstblood`: a first-blood feed widget on the
+  `dashboard.widgets` slot; the UI-slot tutorial.
+
 ## Roadmap
 
-Phase 2b: plugin framework. (Backend tests (discovery, scoping, echo provider, crash isolation, config)
-
-- UI slot system + reference widget (palestrix-widget-firstblood)
-- Verify (pytest + next build), update docs/READMEs
-
-)  
+Phase 2b: plugin framework — **done** (backend framework + tests, UI slot
+system, both reference plugins).
 Phase 3: gamification. Phase 4: orchestration + TTL reaper. Phase 5: live feature surfaces. Phase 6: sandbox module. Phase 7: multitenant layer + hardened deployments. Phase 8: Canvas LMS integration. Details in [docs/architecture.md](docs/architecture.md).

@@ -1,9 +1,11 @@
-# PalestrIX Core API (Phase 2)
+# PalestrIX Core API (Phase 2 + 2b)
 
 Python / FastAPI backend: passkey-first auth, RBAC, the versioned `/api/v1`
 surface, API-key and OAuth2 client-credentials auth for machines, the
-webhook/event bus, and object storage wiring. The web UI, plugins, and
-external tools all consume this same contract (docs/public-api.md).
+webhook/event bus, object storage wiring, and the plugin framework
+(discovery, capability scoping, encrypted config, crash isolation). The web
+UI, plugins, and external tools all consume this same contract
+(docs/public-api.md).
 
 ## Quickstart
 
@@ -31,11 +33,16 @@ real deployment. Storage defaults to a local folder; set
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
-18 tests cover registration/login, API-key scope limits and revocation,
+24 tests cover registration/login, API-key scope limits and revocation,
 OAuth2 client credentials, WebAuthn ceremony endpoints, the RBAC matrix over
 HTTP, course/enrollment ownership, the CTF flow (first blood, cooldown,
-duplicate solves, leaderboard), instance quotas and TTL extension spend, and
-webhook fan-out with HMAC signature verification.
+duplicate solves, leaderboard), instance quotas and TTL extension spend,
+webhook fan-out with HMAC signature verification, and the plugin framework
+(entry-point + path discovery, the contract version gate, capability-scoped
+service principals, required/secret config with encryption at rest, the echo
+provider end to end, and crash isolation). Plugin tests load the installed
+`plugins/palestrix-provider-demo` package plus throwaway fixtures under
+`tests/fixtures/`.
 
 ## Layout
 
@@ -47,6 +54,8 @@ webhook fan-out with HMAC signature verification.
 | `palestrix/webauthn_flow.py` | Passkey ceremonies (py_webauthn) |
 | `palestrix/events.py` | Event bus + signed webhook deliveries |
 | `palestrix/storage.py` | Object storage (local / MinIO) |
+| `palestrix/providers.py` | Instance provider registry (demo + plugin-owned kinds) |
+| `palestrix/plugins/` | Plugin framework: manifest, contract, registry (docs/plugin-development.md) |
 | `palestrix/api/` | One router per resource group under `/api/v1` |
 | `palestrix/seed.py` | Idempotent demo data (mirrors frontend mocks) |
 

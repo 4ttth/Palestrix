@@ -24,9 +24,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 
-# python backend
+# python (backend + plugins)
 backend/.venv/
-backend/**/__pycache__/
+__pycache__/
 backend/*.db
 backend/.objects/
 backend/.pytest_cache/
