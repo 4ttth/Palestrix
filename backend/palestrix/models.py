@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import enum
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     JSON,
     Boolean,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -270,7 +271,7 @@ class InstanceLog(Base):
 
 
 # --------------------------------------------------------------------------
-# Gamification (ledger only in Phase 2; rules land in Phase 3)
+# Gamification (append-only ledger + streak state; rules in gamification.py)
 # --------------------------------------------------------------------------
 
 
@@ -283,6 +284,25 @@ class LedgerEntry(Base):
     reason: Mapped[str] = mapped_column(String(64))  # module.completed, flag.captured, ...
     ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Streak(Base):
+    """Per-user daily-activity streak. One row per user, mutated in place by
+    the gamification service (the ledger stays append-only; this is derived
+    state, safe to recompute). ``weeks_paid`` records how many weekly
+    checkpoints have already been rewarded so the same week is never paid
+    twice; it resets to 0 whenever a gap breaks the streak."""
+
+    __tablename__ = "streaks"
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    current_days: Mapped[int] = mapped_column(Integer, default=0)
+    longest_days: Mapped[int] = mapped_column(Integer, default=0)
+    last_active_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    weeks_paid: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
 
 
 # --------------------------------------------------------------------------

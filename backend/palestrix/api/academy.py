@@ -2,10 +2,10 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import schemas
+from .. import gamification, schemas
 from ..db import SessionLocal, get_db
-from ..events import dispatch_pending, emit
-from ..models import LedgerEntry, Module, ModuleCompletion, Path, User
+from ..events import dispatch_pending
+from ..models import Module, ModuleCompletion, Path
 from ..rbac import Principal
 from .deps import get_principal, require_capability
 
@@ -40,9 +40,9 @@ def complete_module(
     principal: Principal = Depends(require_capability("academy:complete")),
     db: Session = Depends(get_db),
 ):
-    """Records completion and posts the base Palestras award to the ledger.
-    Phase 3 layers the full earn rules (streak bonuses, caps, decay) on top;
-    the award value itself already lives on the module row."""
+    """Records completion, then asks the gamification service to award the
+    module's Palestras. The service owns the earn rules (student-only, the
+    daily cap, the streak checkpoint) and is the only writer to the ledger."""
     module = db.get(Module, module_id)
     if module is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such module")
@@ -55,24 +55,15 @@ def complete_module(
     if done:
         raise HTTPException(status.HTTP_409_CONFLICT, "already completed")
     db.add(ModuleCompletion(module_id=module_id, user_id=principal.user_id))
-    db.add(
-        LedgerEntry(
-            user_id=principal.user_id,
-            delta=module.palestras_award,
-            reason="module.completed",
-            ref=module_id,
-        )
-    )
-    user = db.get(User, principal.user_id)
-    emit(
+    result = gamification.award(
         db,
-        "palestras.changed",
-        {
-            "user": user.handle if user else principal.user_id,
-            "delta": module.palestras_award,
-            "reason": "module.completed",
-        },
+        user_id=principal.user_id,
+        role=principal.role,
+        amount=module.palestras_award,
+        reason=gamification.EARN_MODULE,
+        ref=module_id,
     )
+    gamification.touch_streak(db, principal.user_id, principal.role)
     db.commit()
     background.add_task(dispatch_pending, SessionLocal())
-    return {"completed": True, "palestras_awarded": module.palestras_award}
+    return {"completed": True, "palestras_awarded": result.posted}

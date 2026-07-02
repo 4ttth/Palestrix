@@ -23,8 +23,12 @@ from .models import (
     Module,
     Path,
     Role,
+    Streak,
     Tenant,
     User,
+    Vote,
+    Writeup,
+    utcnow,
 )
 from .security import hash_password, sha256_hex
 
@@ -130,6 +134,65 @@ def seed() -> None:
                     owner_id=users["sir.delacruz"].id,
                 )
             )
+
+        # A demo streak so the dashboard's streak card and the weekly-checkpoint
+        # rule are visible immediately (mirrors lib/mock.ts: 11-day streak).
+        if db.scalar(select(Streak)) is None:
+            today = utcnow().date()
+            db.add(
+                Streak(
+                    user_id=users["rafalmz"].id,
+                    current_days=11,
+                    longest_days=11,
+                    last_active_on=today,
+                    weeks_paid=1,  # 11 // 7 == 1 checkpoint already paid
+                )
+            )
+            db.add(
+                Streak(
+                    user_id=users["amihan"].id,
+                    current_days=4,
+                    longest_days=9,
+                    last_active_on=today,
+                    weeks_paid=0,
+                )
+            )
+
+        # Published writeups with votes so community score, the community
+        # leaderboard, and public profiles have real data (mirrors lib/mock.ts).
+        if db.scalar(select(Writeup)) is None:
+            demo_writeups = [
+                (
+                    "amihan",
+                    "Repeating Pad: XOR is not a vault",
+                    ["crypto", "xor"],
+                    ("rafalmz", "gab_lockpick", "sir.delacruz"),
+                ),
+                (
+                    "rafalmz",
+                    "Log triage: a 15-minute runbook",
+                    ["blue-team", "siem"],
+                    ("amihan", "gab_lockpick"),
+                ),
+            ]
+            for author, title, tags, voters in demo_writeups:
+                writeup = Writeup(
+                    author_id=users[author].id,
+                    title=title,
+                    body_md=f"# {title}\n\nSeeded writeup for local development.",
+                    tags=tags,
+                    published=True,
+                )
+                db.add(writeup)
+                db.flush()
+                for voter in voters:
+                    db.add(
+                        Vote(
+                            writeup_id=writeup.id,
+                            user_id=users[voter].id,
+                            value=1,
+                        )
+                    )
 
         if db.scalar(select(CtfEvent)) is None:
             now = datetime.now(timezone.utc)

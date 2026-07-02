@@ -44,6 +44,30 @@ class Settings(BaseSettings):
     instance_extend_cost_palestras: int = 150
     instance_extend_step_minutes: int = 30
 
+    # Gamification (Phase 3) — the balance rules the service enforces. All
+    # earning is student-only (rbac-matrix.md); staff have no earn path.
+    #
+    # Per-source daily earn caps (0 disables a cap). Anti-abuse: no single
+    # source can be farmed past its ceiling in a UTC day.
+    palestras_daily_cap_module: int = 500
+    palestras_daily_cap_flag: int = 1000
+    palestras_daily_cap_writeup: int = 180
+    # Flat awards / costs.
+    writeup_publish_award_palestras: int = 60
+    first_blood_bonus_palestras: int = 25
+    streak_weekly_bonus_palestras: int = 100
+    hint_cost_palestras: int = 50
+    # Flag-capture dynamic scoring: the award decays by `flag_scale_step` for
+    # each prior solve, never below `flag_scale_floor` of the base award, so
+    # early solves of a hard challenge are worth the most.
+    flag_scale_step: float = 0.08
+    flag_scale_floor: float = 0.4
+    # Community score: contributions fade with a half-life so ranks reward
+    # recency (rbac-matrix.md). Each published writeup is worth a base plus its
+    # net votes, multiplied by 0.5 ** (age_days / half_life).
+    community_score_halflife_days: float = 30.0
+    community_writeup_base_points: int = 10
+
 
 @lru_cache
 def get_settings() -> Settings:

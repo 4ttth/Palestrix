@@ -14,7 +14,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import schemas
+from .. import gamification, schemas
 from ..config import get_settings
 from ..db import SessionLocal, get_db
 from ..events import dispatch_pending, emit
@@ -23,7 +23,6 @@ from ..models import (
     InstanceLog,
     InstanceState,
     LabTemplate,
-    LedgerEntry,
     Tenant,
     User,
     as_utc,
@@ -171,6 +170,7 @@ def get_logs(
 def extend(
     instance_id: str,
     body: schemas.ExtendIn,
+    background: BackgroundTasks,
     principal: Principal = Depends(get_principal),
     db: Session = Depends(get_db),
 ):
@@ -188,28 +188,30 @@ def extend(
             status.HTTP_409_CONFLICT, "extension exceeds the template's maximum TTL"
         )
 
+    # The gamification service is the only writer to the ledger; it refuses the
+    # spend (rather than going negative) when the balance can't cover it.
     cost = settings.instance_extend_cost_palestras
-    balance = db.scalar(
-        select(func.coalesce(func.sum(LedgerEntry.delta), 0)).where(
-            LedgerEntry.user_id == principal.user_id
-        )
-    )
-    if balance < cost:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail={"error": "insufficient_palestras", "cost": cost, "balance": balance},
-        )
-    db.add(
-        LedgerEntry(
+    try:
+        gamification.spend(
+            db,
             user_id=principal.user_id,
-            delta=-cost,
-            reason="instance.extended",
+            amount=cost,
+            reason=gamification.SPEND_EXTEND,
             ref=instance.id,
         )
-    )
+    except gamification.InsufficientPalestras as exc:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={
+                "error": "insufficient_palestras",
+                "cost": exc.cost,
+                "balance": exc.balance,
+            },
+        )
     instance.expires_at = new_expiry
     add_log(db, instance.id, f"ttl extended by {body.minutes} min", level="warn")
     db.commit()
+    background.add_task(dispatch_pending, SessionLocal())
     return instance
 
 

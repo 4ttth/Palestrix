@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import schemas
+from .. import gamification, schemas
 from ..db import get_db
 from ..models import Role, User
 from ..rbac import Principal
@@ -28,7 +28,9 @@ def public_profile(
     user = db.scalar(select(User).where(User.handle == handle))
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such user")
-    return user
+    out = schemas.PublicProfileOut.model_validate(user)
+    out.community_score = gamification.community_score(db, user.id)
+    return out
 
 
 @router.patch("/{user_id}/role", response_model=schemas.UserOut)

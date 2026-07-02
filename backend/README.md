@@ -1,11 +1,13 @@
-# PalestrIX Core API (Phase 2 + 2b)
+# PalestrIX Core API (Phase 2 + 2b + 3)
 
 Python / FastAPI backend: passkey-first auth, RBAC, the versioned `/api/v1`
 surface, API-key and OAuth2 client-credentials auth for machines, the
-webhook/event bus, object storage wiring, and the plugin framework
-(discovery, capability scoping, encrypted config, crash isolation). The web
-UI, plugins, and external tools all consume this same contract
-(docs/public-api.md).
+webhook/event bus, object storage wiring, the plugin framework (discovery,
+capability scoping, encrypted config, crash isolation), and the gamification
+service (Phase 3): the append-only Palestras ledger, per-source daily caps,
+solve-count-scaled flag awards, streaks with a weekly checkpoint, community
+score, and the student-only leaderboards. The web UI, plugins, and external
+tools all consume this same contract (docs/public-api.md).
 
 ## Quickstart
 
@@ -33,16 +35,19 @@ real deployment. Storage defaults to a local folder; set
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
-24 tests cover registration/login, API-key scope limits and revocation,
+30 tests cover registration/login, API-key scope limits and revocation,
 OAuth2 client credentials, WebAuthn ceremony endpoints, the RBAC matrix over
 HTTP, course/enrollment ownership, the CTF flow (first blood, cooldown,
-duplicate solves, leaderboard), instance quotas and TTL extension spend,
-webhook fan-out with HMAC signature verification, and the plugin framework
-(entry-point + path discovery, the contract version gate, capability-scoped
-service principals, required/secret config with encryption at rest, the echo
-provider end to end, and crash isolation). Plugin tests load the installed
-`plugins/palestrix-provider-demo` package plus throwaway fixtures under
-`tests/fixtures/`.
+duplicate solves, leaderboard), instance quotas and TTL extension spend, the
+gamification rules (solve-count-scaled flag awards, the first-blood bonus as
+its own ledger line, writeup earning under the staff no-earn rule, per-source
+daily caps, streak accrual with the weekly checkpoint, community score, and
+the student-only leaderboards), webhook fan-out with HMAC signature
+verification, and the plugin framework (entry-point + path discovery, the
+contract version gate, capability-scoped service principals, required/secret
+config with encryption at rest, the echo provider end to end, and crash
+isolation). Plugin tests load the installed `plugins/palestrix-provider-demo`
+package plus throwaway fixtures under `tests/fixtures/`.
 
 ## Layout
 
@@ -52,6 +57,7 @@ provider end to end, and crash isolation). Plugin tests load the installed
 | `palestrix/rbac.py` | Capability matrix, Principal, scope rules |
 | `palestrix/security.py` | argon2id passwords, JWTs, API keys |
 | `palestrix/webauthn_flow.py` | Passkey ceremonies (py_webauthn) |
+| `palestrix/gamification.py` | The only minter/burner of Palestras: caps, streaks, community score, ranking |
 | `palestrix/events.py` | Event bus + signed webhook deliveries |
 | `palestrix/storage.py` | Object storage (local / MinIO) |
 | `palestrix/providers.py` | Instance provider registry (demo + plugin-owned kinds) |
@@ -65,7 +71,11 @@ provider end to end, and crash isolation). Plugin tests load the installed
   quotas, logs, states). Phase 4 swaps in the Proxmox/Docker adapters, the
   Redis job queue, the SSE log stream, and the TTL reaper; the HTTP
   contract stays as-is.
-- The Palestras **ledger** is live (module completions and flag captures
-  earn; TTL extensions spend). Phase 3 adds streaks, caps, decay, and the
-  balancing rules.
+- The Palestras **ledger** and its balancing rules are live in
+  `palestrix/gamification.py` — the single component allowed to mint or burn
+  currency. Earn sources (module completion, solve-count-scaled flag capture,
+  first-blood bonus, writeup publication, weekly streak checkpoint), spend
+  sinks (TTL extensions), per-source daily caps, the student-only earn path,
+  community-score decay, and the leaderboards all live there. Every other
+  service posts a request to it with a reason code.
 - `/sandbox` endpoints are reserved (501) until the Phase 6 module.

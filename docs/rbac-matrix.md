@@ -69,3 +69,27 @@ Legend: Y = allowed, O = only own/enrolled resources, - = denied.
   of the account that created it.
 - Every table with tenant-owned rows carries `tenant_id`; queries filter on
   it in a shared repository layer, not per-endpoint.
+
+## Implementation notes (Phase 3 — gamification)
+
+The cross-cutting rules above are enforced in one module,
+`backend/palestrix/gamification.py`, the only writer to the `ledger_entries`
+table. Callers (academy, compete, community, instances) post a request with a
+reason code; the service applies the rules and is the sole place that emits
+`palestras.changed`.
+
+- **Student-only earn path.** `award()` credits nothing for teacher/admin
+  principals, so leaderboards and streaks stay student-only by construction.
+- **Per-source daily caps.** `palestras_daily_cap_*` bound how much any one
+  source can pay per UTC day; overflow is trimmed, not queued.
+- **Solve-count scaling.** A flag capture's Palestras decay by
+  `flag_scale_step` per prior solve down to `flag_scale_floor` of the base;
+  the first blood earns the full base plus a separate bonus ledger line.
+- **Streaks.** One `streaks` row per user tracks consecutive active days; a
+  weekly checkpoint (every 7th day) pays `streak_weekly_bonus_palestras`, and
+  a gap resets both the streak and the paid-week counter.
+- **Community score** is computed on read: each published writeup is worth a
+  base plus its net votes, faded by `community_score_halflife_days` so ranks
+  reward recency; the ledger is never touched for it.
+- **Immutability.** `award`/`spend` only ever append rows; a correction is a
+  new compensating entry.

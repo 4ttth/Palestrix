@@ -4,11 +4,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
-from .. import schemas
+from .. import gamification, schemas
 from ..config import get_settings
 from ..db import SessionLocal, get_db
 from ..events import dispatch_pending, emit
-from ..models import Challenge, CtfEvent, FlagSubmission, LedgerEntry, User, as_utc
+from ..models import Challenge, CtfEvent, FlagSubmission, User, as_utc
 from ..rbac import Principal
 from ..security import sha256_hex
 from .deps import get_principal, require_capability
@@ -141,14 +141,15 @@ def submit_flag(
 
     correct = sha256_hex(body.flag.strip()) == challenge.flag_hash
     first_blood = False
+    solves_before = 0
     if correct:
-        any_solve = db.scalar(
-            select(FlagSubmission).where(
+        solves_before = db.scalar(
+            select(func.count(FlagSubmission.id)).where(
                 FlagSubmission.challenge_id == challenge_id,
                 FlagSubmission.correct.is_(True),
             )
         )
-        first_blood = any_solve is None
+        first_blood = solves_before == 0
 
     submission = FlagSubmission(
         challenge_id=challenge_id,
@@ -161,16 +162,32 @@ def submit_flag(
 
     palestras = 0
     if correct:
-        palestras = challenge.palestras_award + (25 if first_blood else 0)
-        if palestras:
-            db.add(
-                LedgerEntry(
-                    user_id=principal.user_id,
-                    delta=palestras,
-                    reason="flag.captured",
-                    ref=challenge_id,
-                )
+        # No earning from a challenge you authored (rbac-matrix.md). Authors are
+        # staff and cannot submit, but the guard keeps the rule where it reads.
+        self_authored = challenge.created_by == principal.user_id
+        base = 0 if self_authored else gamification.flag_award(
+            challenge.palestras_award, solves_before
+        )
+        earned = gamification.award(
+            db,
+            user_id=principal.user_id,
+            role=principal.role,
+            amount=base,
+            reason=gamification.EARN_FLAG,
+            ref=challenge_id,
+        )
+        palestras = earned.posted
+        if first_blood and not self_authored:
+            bonus = gamification.award(
+                db,
+                user_id=principal.user_id,
+                role=principal.role,
+                amount=settings.first_blood_bonus_palestras,
+                reason=gamification.EARN_FIRST_BLOOD,
+                ref=challenge_id,
             )
+            palestras += bonus.posted
+        gamification.touch_streak(db, principal.user_id, principal.role)
         user = db.get(User, principal.user_id)
         emit(
             db,

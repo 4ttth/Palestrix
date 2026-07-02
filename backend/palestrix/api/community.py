@@ -2,7 +2,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import schemas
+from .. import gamification, schemas
+from ..config import get_settings
 from ..db import SessionLocal, get_db
 from ..events import dispatch_pending, emit
 from ..models import Comment, User, Vote, Writeup
@@ -50,6 +51,17 @@ def create_writeup(
     if writeup.published:
         author = db.get(User, principal.user_id)
         db.flush()
+        # Publishing earns Palestras and counts toward the streak (student-only;
+        # the service no-ops for staff authors).
+        gamification.award(
+            db,
+            user_id=principal.user_id,
+            role=principal.role,
+            amount=get_settings().writeup_publish_award_palestras,
+            reason=gamification.EARN_WRITEUP,
+            ref=writeup.id,
+        )
+        gamification.touch_streak(db, principal.user_id, principal.role)
         emit(
             db,
             "writeup.published",

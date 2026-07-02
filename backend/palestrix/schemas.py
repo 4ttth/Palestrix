@@ -1,7 +1,7 @@
 """Pydantic request/response models for /api/v1. Response models never leak
 hashes, secrets (beyond one-time reveals), or other principals' data."""
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -45,6 +45,7 @@ class PublicProfileOut(ORMModel):
     handle: str
     name: str
     role: Role
+    community_score: int = 0  # recency-decayed contribution (gamification.py)
 
 
 class WebAuthnVerifyIn(BaseModel):
@@ -212,6 +213,35 @@ class LedgerEntryOut(ORMModel):
     reason: str
     ref: str | None
     created_at: datetime
+
+
+class StreakOut(ORMModel):
+    current_days: int
+    longest_days: int
+    last_active_on: date | None
+    weeks_paid: int
+
+
+class GamificationSummaryOut(BaseModel):
+    user_id: str
+    handle: str
+    palestras: int  # current spendable balance
+    lifetime_earned: int
+    spent: int
+    streak_days: int
+    longest_streak: int
+    community_score: int
+    first_bloods: int
+    rank: int | None  # position on the global Palestras board (None for staff)
+
+
+class LeaderboardEntryOut(BaseModel):
+    rank: int
+    handle: str
+    score: int  # lifetime earned Palestras, or community score for that board
+    delta: int  # last 7 days' earnings (Palestras board); 0 on the community board
+    first_bloods: int
+    streak_days: int
 
 
 # -- community -----------------------------------------------------------------------

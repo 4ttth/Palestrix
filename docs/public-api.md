@@ -36,6 +36,28 @@ the account that issued it.
 /api/v1/webhooks      subscription management
 ```
 
+## Gamification surface
+
+The gamification service (Phase 3) owns the Palestras ledger and is the only
+component that mints or burns currency; every earn/spend elsewhere posts to it
+with a reason code, and every non-zero entry fires `palestras.changed`.
+
+```
+GET /api/v1/gamification/balance      current spendable balance
+GET /api/v1/gamification/ledger       own append-only ledger (newest first)
+GET /api/v1/gamification/summary      profile card: balance, lifetime earned,
+                                      spent, streak, community score, first
+                                      bloods, global rank
+GET /api/v1/gamification/streak       current/longest streak, last active day
+GET /api/v1/gamification/leaderboard?board=palestras|community
+                                      global, student-only ranking (staff have
+                                      no earn path and never appear)
+```
+
+Balance rules (student-only earning, per-source daily caps, solve-count-scaled
+flag awards, the first-blood bonus, weekly streak checkpoints, and
+recency-decayed community score) are documented in rbac-matrix.md.
+
 ## Worked example: the instance lifecycle over HTTP
 
 ```http
