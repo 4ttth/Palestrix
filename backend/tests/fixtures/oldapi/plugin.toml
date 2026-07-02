@@ -1,0 +1,12 @@
+[plugin]
+id = "oldapi"
+name = "Future Contract Plugin"
+version = "9.0.0"
+api = "99"
+entry = "oldapi_plugin:OldApiPlugin"
+
+[permissions]
+scopes = []
+
+[config]
+required = []

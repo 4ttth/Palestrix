@@ -1,0 +1,14 @@
+[plugin]
+id = "needy"
+name = "Needy Test Plugin"
+version = "0.2.0"
+api = "1"
+entry = "needy_plugin:NeedyPlugin"
+
+[permissions]
+scopes = []
+
+[config]
+required = ["api_url", "api_token"]
+optional = ["label"]
+secret = ["api_token"]

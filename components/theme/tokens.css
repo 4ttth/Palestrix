@@ -1,0 +1,145 @@
+/*
+ * PalestrIX locked theme. One theme for every surface: marketing, auth, product, admin.
+ *
+ * Locks (do not fork these per page):
+ *  - Accent: calm electric blue. Used for CTAs, links, focus rings. Nothing else is blue.
+ *  - Gamification: amber, reserved for Palestras (currency) and streaks.
+ *  - Instance lifecycle states: pastel semantic pairs (provisioning / running / stopped / expired).
+ *  - Radius scale: cards 12px, inputs 8px, primary CTAs pill.
+ *  - Type: Geist Sans for UI and display, Geist Mono for all technical data
+ *    (IPs, ports, hashes, timers, scores, log lines).
+ *  - Mode: auto (prefers-color-scheme), overridable with [data-theme="light" | "dark"].
+ */
+
+:root {
+  color-scheme: light;
+
+  --background: #f6f6f7;
+  --surface: #fcfcfd;
+  --surface-2: #efeff2;
+  --foreground: #131316;
+  --muted: #63636e;
+  --border: #e2e2e6;
+  --ring: #2f6fe0;
+
+  --accent: #2f6fe0;
+  --accent-foreground: #fcfcfd;
+  --accent-soft: #e8effc;
+
+  --danger: #b3243f;
+  --danger-foreground: #fdfcfc;
+
+  --state-provisioning-bg: #e3f1fb;
+  --state-provisioning-fg: #14639e;
+  --state-running-bg: #ddf3e7;
+  --state-running-fg: #13744c;
+  --state-stopped-bg: #e7e7ea;
+  --state-stopped-fg: #56565f;
+  --state-expired-bg: #fbe5e9;
+  --state-expired-fg: #a92742;
+
+  --palestras-bg: #f8ecd3;
+  --palestras-fg: #7c5410;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --background: #0d0d10;
+    --surface: #141419;
+    --surface-2: #1b1b22;
+    --foreground: #ebebf0;
+    --muted: #9c9ca8;
+    --border: #26262e;
+    --ring: #6f97ee;
+
+    --accent: #6f97ee;
+    --accent-foreground: #0d0d10;
+    --accent-soft: #172239;
+
+    --danger: #e2607b;
+    --danger-foreground: #160609;
+
+    --state-provisioning-bg: #102438;
+    --state-provisioning-fg: #7cb8e8;
+    --state-running-bg: #0d2a1e;
+    --state-running-fg: #57c795;
+    --state-stopped-bg: #222229;
+    --state-stopped-fg: #9c9ca8;
+    --state-expired-bg: #341721;
+    --state-expired-fg: #e88aa0;
+
+    --palestras-bg: #2b2110;
+    --palestras-fg: #dfaf54;
+  }
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --background: #0d0d10;
+  --surface: #141419;
+  --surface-2: #1b1b22;
+  --foreground: #ebebf0;
+  --muted: #9c9ca8;
+  --border: #26262e;
+  --ring: #6f97ee;
+
+  --accent: #6f97ee;
+  --accent-foreground: #0d0d10;
+  --accent-soft: #172239;
+
+  --danger: #e2607b;
+  --danger-foreground: #160609;
+
+  --state-provisioning-bg: #102438;
+  --state-provisioning-fg: #7cb8e8;
+  --state-running-bg: #0d2a1e;
+  --state-running-fg: #57c795;
+  --state-stopped-bg: #222229;
+  --state-stopped-fg: #9c9ca8;
+  --state-expired-bg: #341721;
+  --state-expired-fg: #e88aa0;
+
+  --palestras-bg: #2b2110;
+  --palestras-fg: #dfaf54;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-soft: var(--accent-soft);
+
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+
+  --color-provisioning: var(--state-provisioning-fg);
+  --color-provisioning-soft: var(--state-provisioning-bg);
+  --color-running: var(--state-running-fg);
+  --color-running-soft: var(--state-running-bg);
+  --color-stopped: var(--state-stopped-fg);
+  --color-stopped-soft: var(--state-stopped-bg);
+  --color-expired: var(--state-expired-fg);
+  --color-expired-soft: var(--state-expired-bg);
+
+  --color-palestras: var(--palestras-fg);
+  --color-palestras-soft: var(--palestras-bg);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "Cascadia Mono", monospace;
+
+  /* Shape Consistency Lock: cards 12px, inputs 8px, CTAs pill (rounded-full). */
+  --radius-card: 0.75rem;
+  --radius-input: 0.5rem;
+
+  --ease-swift: cubic-bezier(0.16, 1, 0.3, 1);
+}

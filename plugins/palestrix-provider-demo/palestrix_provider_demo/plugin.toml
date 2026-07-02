@@ -1,0 +1,14 @@
+[plugin]
+id = "provider-demo"
+name = "Echo Instance Provider"
+version = "1.0.0"
+api = "1"
+entry = "palestrix_provider_demo.plugin:ProviderDemoPlugin"
+
+[permissions]
+scopes = ["instances:read"]
+
+[config]
+required = []
+optional = ["banner"]
+secret = []

@@ -1,0 +1,79 @@
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from .. import schemas
+from ..db import get_db
+from ..models import LabTemplate
+from ..providers import known_kinds
+from ..rbac import Principal
+from ..storage import get_storage
+from .deps import get_principal, require_capability
+
+router = APIRouter(prefix="/labs", tags=["labs"])
+
+
+@router.get("/templates", response_model=list[schemas.LabTemplateOut])
+def list_templates(
+    principal: Principal = Depends(get_principal), db: Session = Depends(get_db)
+):
+    return db.scalars(select(LabTemplate)).all()
+
+
+@router.post("/templates", response_model=schemas.LabTemplateOut, status_code=201)
+def publish_template(
+    principal: Principal = Depends(require_capability("courses:write")),
+    db: Session = Depends(get_db),
+    slug: str = Form(pattern=r"^[a-z0-9-]+:[0-9.]+$"),
+    title: str = Form(min_length=4),
+    kind: str = Form(default="container"),
+    access_mode: str = Form(default="no-gui", pattern="^(gui|no-gui)$"),
+    ttl_minutes_default: int = Form(default=90, ge=15, le=480),
+    ttl_minutes_max: int = Form(default=240, ge=15, le=480),
+    vm_template: str | None = Form(default=None),
+    archive: UploadFile | None = None,
+):
+    """Teacher advanced mode: publish a live environment. Container labs
+    carry a Dockerfile/compose archive (stored now, built by the Phase 4
+    workers); VM labs reference an admin-built Proxmox template. Additional
+    kinds come from plugin-registered providers."""
+    active_kinds = known_kinds()
+    if kind not in active_kinds:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"unknown lab kind '{kind}'; active kinds: {sorted(active_kinds)}",
+        )
+    if db.scalar(select(LabTemplate).where(LabTemplate.slug == slug)):
+        raise HTTPException(status.HTTP_409_CONFLICT, "slug already published")
+    if kind == "container" and archive is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "container labs require a Dockerfile/compose archive",
+        )
+    if kind == "vm" and not vm_template:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "vm labs require a vm_template"
+        )
+    archive_key = None
+    if archive is not None:
+        storage = get_storage()
+        archive_key = storage.put(
+            "lab-archives",
+            f"templates/{slug.replace(':', '_')}/{archive.filename}",
+            archive.file,
+            archive.size or 0,
+        )
+    template = LabTemplate(
+        slug=slug,
+        title=title,
+        kind=kind,
+        access_mode=access_mode,
+        ttl_minutes_default=ttl_minutes_default,
+        ttl_minutes_max=max(ttl_minutes_max, ttl_minutes_default),
+        archive_key=archive_key,
+        vm_template=vm_template,
+        owner_id=principal.user_id,
+    )
+    db.add(template)
+    db.commit()
+    return template

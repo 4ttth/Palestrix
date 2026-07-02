@@ -1,0 +1,2 @@
+[palestrix.plugins]
+provider-demo = palestrix_provider_demo.plugin:ProviderDemoPlugin

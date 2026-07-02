@@ -1,0 +1,12 @@
+[plugin]
+id = "crashy"
+name = "Crashy Test Plugin"
+version = "0.1.0"
+api = "1"
+entry = "crashy_plugin:CrashyPlugin"
+
+[permissions]
+scopes = []
+
+[config]
+required = []

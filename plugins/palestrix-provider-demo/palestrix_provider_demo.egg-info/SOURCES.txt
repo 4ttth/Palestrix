@@ -1,0 +1,9 @@
+pyproject.toml
+palestrix_provider_demo/__init__.py
+palestrix_provider_demo/plugin.py
+palestrix_provider_demo/plugin.toml
+palestrix_provider_demo.egg-info/PKG-INFO
+palestrix_provider_demo.egg-info/SOURCES.txt
+palestrix_provider_demo.egg-info/dependency_links.txt
+palestrix_provider_demo.egg-info/entry_points.txt
+palestrix_provider_demo.egg-info/top_level.txt
