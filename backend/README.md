@@ -1,12 +1,14 @@
-# PalestrIX Core API (Phase 2 + 2b + 3)
+# PalestrIX Core API (Phase 2 + 2b + 3 + 4)
 
 Python / FastAPI backend: passkey-first auth, RBAC, the versioned `/api/v1`
 surface, API-key and OAuth2 client-credentials auth for machines, the
 webhook/event bus, object storage wiring, the plugin framework (discovery,
-capability scoping, encrypted config, crash isolation), and the gamification
+capability scoping, encrypted config, crash isolation), the gamification
 service (Phase 3): the append-only Palestras ledger, per-source daily caps,
 solve-count-scaled flag awards, streaks with a weekly checkpoint, community
-score, and the student-only leaderboards. The web UI, plugins, and external
+score, and the student-only leaderboards, and orchestration (Phase 4): the
+job queue (inline or Redis), the Docker/Proxmox adapters, the SSE log stream,
+and the TTL reaper with reconciliation. The web UI, plugins, and external
 tools all consume this same contract (docs/public-api.md).
 
 ## Quickstart
@@ -35,7 +37,7 @@ real deployment. Storage defaults to a local folder; set
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
-30 tests cover registration/login, API-key scope limits and revocation,
+36 tests cover registration/login, API-key scope limits and revocation,
 OAuth2 client credentials, WebAuthn ceremony endpoints, the RBAC matrix over
 HTTP, course/enrollment ownership, the CTF flow (first blood, cooldown,
 duplicate solves, leaderboard), instance quotas and TTL extension spend, the
@@ -43,11 +45,14 @@ gamification rules (solve-count-scaled flag awards, the first-blood bonus as
 its own ledger line, writeup earning under the staff no-earn rule, per-source
 daily caps, streak accrual with the weekly checkpoint, community score, and
 the student-only leaderboards), webhook fan-out with HMAC signature
-verification, and the plugin framework (entry-point + path discovery, the
+verification, the plugin framework (entry-point + path discovery, the
 contract version gate, capability-scoped service principals, required/secret
 config with encryption at rest, the echo provider end to end, and crash
-isolation). Plugin tests load the installed `plugins/palestrix-provider-demo`
-package plus throwaway fixtures under `tests/fixtures/`.
+isolation), and orchestration (SSE log stream replay, stop/destroy transitions,
+TTL reaper pass with quota release, provision failure retry policy, Docker
+adapter with recorded CLI, and Proxmox VE adapter with mocked API). Plugin
+tests load the installed `plugins/palestrix-provider-demo` package plus
+throwaway fixtures under `tests/fixtures/`.
 
 ## Layout
 
@@ -61,16 +66,24 @@ package plus throwaway fixtures under `tests/fixtures/`.
 | `palestrix/events.py` | Event bus + signed webhook deliveries |
 | `palestrix/storage.py` | Object storage (local / MinIO) |
 | `palestrix/providers.py` | Instance provider registry (demo + plugin-owned kinds) |
+| `palestrix/orchestration/` | Job queue (inline/redis), handlers, TTL reaper, Docker/Proxmox adapters |
 | `palestrix/plugins/` | Plugin framework: manifest, contract, registry (docs/plugin-development.md) |
 | `palestrix/api/` | One router per resource group under `/api/v1` |
 | `palestrix/seed.py` | Idempotent demo data (mirrors frontend mocks) |
 
 ## Phase boundaries honored here
 
-- Instances run on a **demo provider** (instant provision, real registry,
-  quotas, logs, states). Phase 4 swaps in the Proxmox/Docker adapters, the
-  Redis job queue, the SSE log stream, and the TTL reaper; the HTTP
-  contract stays as-is.
+- Instances route through **adapters** (Phase 4 complete):
+  `palestrix/orchestration/docker.py` (CLI-driven, injectable runner),
+  `palestrix/orchestration/proxmox.py` (httpx client, injectable for testing),
+  plus a demo provider during early development. The queue backend
+  (`palestrix/orchestration/queue.py`) is swappable: `inline` for dev/test
+  (jobs run immediately), `redis` for production (workers consume async).
+  Job handlers (`palestrix/orchestration/jobs.py`) manage provision retries
+  (up to 2 attempts on failure). The reaper (`palestrix/orchestration/reaper.py`)
+  runs scheduled (daemon thread for inline, loop in Redis worker) and fires
+  whenever `expires_at < now()`, or manually via admin endpoint. HTTP contract
+  stays as-is across all backends.
 - The Palestras **ledger** and its balancing rules are live in
   `palestrix/gamification.py` — the single component allowed to mint or burn
   currency. Earn sources (module completion, solve-count-scaled flag capture,

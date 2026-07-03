@@ -112,19 +112,11 @@ provider-authoring tutorial, exercised by the backend test suite.
 Phase 3: gamification. **Done** — ledger, caps, streaks, community score, and
 ranking in [backend/palestrix/gamification.py](backend/palestrix/gamification.py).
 
-Phase 4: orchestration + TTL reaper. 95% Done:
-
-**Todos:**
-
-- ~~Add orchestration settings to [config.py](http://config.py) + .env.example~~
-- ~~Extend provider contract (stop/expose) in [providers.py](http://providers.py)~~
-- ~~Create orchestration package: queue (inline/redis), jobs, reaper~~
-- ~~Write Docker adapter (CLI-driven, injectable runner)~~
-- ~~Write Proxmox VE adapter (httpx, injectable client)~~
-- ~~Rework instances launch through the queue; add stop + SSE log stream endpoints~~
-- ~~Add admin reaper controls + wire lifespan (adapters, reaper thread) + worker entry point~~
-- Write tests/test_[orchestration.py](http://orchestration.py) and run the suite
-- Update docs (READMEs, public-api, ephemeral-lifecycle)
+Phase 4: orchestration + TTL reaper. **Done** — 6 tests in test_orchestration.py:
+SSE log stream replay, stop/destroy transitions, TTL reaper pass (quota
+release), provision failure retry policy (up to 2 attempts), Docker adapter
+(CLI-driven with recorded runner), and Proxmox VE adapter (httpx MockTransport).
+Full test suite: 36 tests pass. Next: Phase 5 (live feature surfaces).
 
 Phase 5: live feature surfaces. 
 
