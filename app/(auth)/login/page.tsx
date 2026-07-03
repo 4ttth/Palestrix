@@ -8,7 +8,7 @@
  * errors, loading, and a contextual failure region (aria-live).
  */
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FingerprintSimple } from "@phosphor-icons/react";
@@ -38,6 +38,27 @@ function LoginForm() {
   const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState<"password" | "passkey" | null>(null);
+
+  /* LTI handoff (Phase 8): an LTI launch validated by the backend redirects
+   * here with a ready session token — store it and continue, no ceremony. */
+  const ltiToken = search.get("lti_token");
+  useEffect(() => {
+    if (!ltiToken) return;
+    writeToken(ltiToken);
+    const next = search.get("next");
+    router.replace(next && next.startsWith("/") ? next : "/dashboard");
+  }, [ltiToken, search, router]);
+
+  if (ltiToken) {
+    return (
+      <div role="status" aria-label="Signing you in from your LMS">
+        <h1 className="text-2xl font-semibold tracking-tight">One moment</h1>
+        <p className="mt-2 text-sm leading-relaxed text-muted">
+          Signing you in from your learning platform...
+        </p>
+      </div>
+    );
+  }
 
   function finish(token: TokenOut) {
     writeToken(token.access_token);

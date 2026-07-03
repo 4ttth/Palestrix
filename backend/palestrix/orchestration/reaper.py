@@ -89,11 +89,17 @@ class ReaperThread(threading.Thread):
         self._halt = threading.Event()
 
     def run(self) -> None:
+        # Phase 8: the reaper is the platform heartbeat, so queued grade
+        # passbacks retry on the same tick (integrations/passback.py owns the
+        # backoff; the import is deferred to keep module load order simple).
+        from ..integrations.passback import dispatch_due_passbacks
+
         while not self._halt.wait(self._interval):
             db = SessionLocal()
             try:
                 reaped = reap_expired(db)
                 reconcile(db)
+                dispatch_due_passbacks(db)
                 if reaped:
                     logger.info("reaper: expired %s", ", ".join(reaped))
                     dispatch_pending(SessionLocal())

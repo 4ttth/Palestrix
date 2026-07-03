@@ -23,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { UploadPanel } from "@/components/course/upload-panel";
+import { CanvasPanel } from "@/components/course/canvas-panel";
 import { Empty, LoadFailed, Loading } from "@/components/ui/async";
 import { api, ApiError } from "@/lib/api/client";
 import { useApi } from "@/lib/api/hooks";
@@ -247,13 +248,16 @@ export function CoursesView() {
             </Card>
 
             {isTeacher && (
-              <UploadPanel
-                course={selected}
-                onPublished={() => {
-                  void assignments.refetch();
-                  void courses.refetch();
-                }}
-              />
+              <div className="space-y-6">
+                <UploadPanel
+                  course={selected}
+                  onPublished={() => {
+                    void assignments.refetch();
+                    void courses.refetch();
+                  }}
+                />
+                <CanvasPanel course={selected} />
+              </div>
             )}
           </div>
         )}

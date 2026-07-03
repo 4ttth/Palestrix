@@ -204,6 +204,17 @@ layer wiring and hardening steps; the admin console gained the full tenants
 surface (create, quota edits, archive, live usage, active cloud layer).
 Full test suite: 63 tests pass.
 
-Phase 8: Canvas LMS integration and a detailed (GitHub formatted) step-by-step installation and setup documentation for both use cases.
+Phase 8: Canvas LMS integration and a detailed (GitHub formatted) step-by-step installation and setup documentation for both use cases. **Todos:**
+
+- ~~Study backend patterns (events, deps, courses API, tests)~~
+- ~~Backend: integrations package (ExternalPlatform contract + registry)~~
+- ~~Backend: Canvas LMS adapter (LTI 1.3 launch, NRPS roster, AGS grades, deep linking)~~
+- ~~Backend: models + config + grade-passback queue with retry~~
+- ~~Backend: /integrations API routes (JWKS, launch, links, sync, receipts)~~
+- ~~Backend: tests (test_[integrations.py](http://integrations.py)) — 8 tests, full suite 71 green~~
+- ~~Frontend: Canvas panel, LTI login handoff, API types — build green~~
+- ~~Docs: step-by-step install guide, Use Case A (baremetal)~~
+- ~~Docs: step-by-step install guide, Use Case B (cloud/AWS)~~
+- Update README, architecture, public-api, canvas docs; run full test suite + build
 
 Details in [docs/architecture.md](docs/architecture.md).

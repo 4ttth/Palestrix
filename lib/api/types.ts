@@ -319,3 +319,52 @@ export type SandboxStatusOut = {
   max_sample_mb: number;
   wall_clock_seconds: number;
 };
+
+/* -- integrations (Phase 8) ------------------------------------------------ */
+
+export type IntegrationPlatformOut = {
+  id: string;
+  name: string;
+  issuer: string;
+  features: string[];
+  ephemeral_key: boolean;
+};
+
+export type ExternalLinkOut = {
+  id: string;
+  course_id: string;
+  platform: string;
+  external_course_id: string;
+  context_id: string;
+  context_title: string;
+  last_synced_at: string | null;
+  created_at: string;
+  grades_pending: number;
+  grades_delivered: number;
+  grades_failed: number;
+};
+
+export type RosterSyncOut = {
+  roster: number;
+  added: number;
+  provisioned: number;
+  removed: number;
+  skipped: number;
+};
+
+export type GradePassbackOut = {
+  id: string;
+  assignment_id: string;
+  user_id: string;
+  score_given: number;
+  score_maximum: number;
+  status: "pending" | "delivered" | "failed";
+  attempts: number;
+  next_attempt_at: string;
+  receipt: string;
+  error: string | null;
+  created_at: string;
+  delivered_at: string | null;
+  student_handle: string;
+  assignment_title: string;
+};

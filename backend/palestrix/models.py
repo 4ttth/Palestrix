@@ -562,3 +562,108 @@ class WebhookDelivery(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending")  # pending|delivered|failed
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# --------------------------------------------------------------------------
+# External platforms (Phase 8). Canvas LMS is the reference adapter
+# (docs/integrations-canvas-lms.md): these rows are everything the core
+# stores about an external platform — external ids, line-item ids, receipts.
+# Platform tokens are never persisted; adapters mint them per call.
+# --------------------------------------------------------------------------
+
+
+class ExternalIdentity(Base):
+    """One platform identity mapped onto a PalestrIX account. The mapping key
+    is the LTI ``sub`` claim + issuer; ``email`` records what the platform
+    asserted when the mapping was made (roster sync or first-launch claim)."""
+
+    __tablename__ = "external_identities"
+    __table_args__ = (UniqueConstraint("platform", "issuer", "subject"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    platform: Mapped[str] = mapped_column(String(32))  # "canvas-lms"
+    issuer: Mapped[str] = mapped_column(String(256))
+    subject: Mapped[str] = mapped_column(String(256))  # LTI sub claim
+    email: Mapped[str] = mapped_column(String(256), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ExternalCourseLink(Base):
+    """A PalestrIX course bound to a platform course. The teacher creates the
+    link with the platform's course id (``external_course_id``); the LTI
+    context id and the NRPS membership URL are captured from the first launch
+    out of that context (the launch claims are authoritative)."""
+
+    __tablename__ = "external_course_links"
+    __table_args__ = (UniqueConstraint("platform", "course_id"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    course_id: Mapped[str] = mapped_column(ForeignKey("courses.id"), index=True)
+    platform: Mapped[str] = mapped_column(String(32))
+    external_course_id: Mapped[str] = mapped_column(String(64))  # e.g. Canvas course id
+    context_id: Mapped[str] = mapped_column(String(256), default="")  # LTI context claim
+    context_title: Mapped[str] = mapped_column(String(256), default="")
+    nrps_url: Mapped[str] = mapped_column(String(1024), default="")
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    last_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class LtiResourceLink(Base):
+    """One deep-linked content item as launched from the platform: maps the
+    platform's resource link to the lab template it targets and the course's
+    lab assignment for that template (grade passback needs the assignment).
+    The AGS line-item URL arrives with the first launch and is refreshed on
+    every launch after that."""
+
+    __tablename__ = "lti_resource_links"
+    __table_args__ = (UniqueConstraint("platform", "resource_link_id"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    platform: Mapped[str] = mapped_column(String(32))
+    resource_link_id: Mapped[str] = mapped_column(String(256))
+    link_id: Mapped[str | None] = mapped_column(
+        ForeignKey("external_course_links.id"), nullable=True, index=True
+    )
+    lab_template_id: Mapped[str | None] = mapped_column(
+        ForeignKey("lab_templates.id"), nullable=True
+    )
+    assignment_id: Mapped[str | None] = mapped_column(
+        ForeignKey("assignments.id"), nullable=True, index=True
+    )
+    lineitem_url: Mapped[str] = mapped_column(String(1024), default="")
+    title: Mapped[str] = mapped_column(String(256), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class GradePassback(Base):
+    """The grade-passback queue. A row is queued when a grade is posted on a
+    linked course for a mapped student whose assignment has a bound line item;
+    the dispatcher (integrations/passback.py) delivers with exponential
+    backoff and keeps the receipt. Failures stay queryable in the teacher's
+    course view, never silent (docs/integrations-canvas-lms.md)."""
+
+    __tablename__ = "grade_passbacks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    platform: Mapped[str] = mapped_column(String(32))
+    link_id: Mapped[str] = mapped_column(ForeignKey("external_course_links.id"), index=True)
+    assignment_id: Mapped[str] = mapped_column(ForeignKey("assignments.id"), index=True)
+    submission_id: Mapped[str] = mapped_column(ForeignKey("submissions.id"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)  # the student
+    lineitem_url: Mapped[str] = mapped_column(String(1024))
+    external_user_id: Mapped[str] = mapped_column(String(256))  # LTI sub on the platform
+    score_given: Mapped[int] = mapped_column(Integer)  # 0-100 (GradeIn's scale)
+    score_maximum: Mapped[int] = mapped_column(Integer, default=100)
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)  # pending|delivered|failed
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    receipt: Mapped[str] = mapped_column(String(256), default="")  # platform's ack
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    delivered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

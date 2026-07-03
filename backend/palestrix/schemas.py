@@ -485,6 +485,68 @@ class PluginEnableIn(BaseModel):
     approve_scopes: list[str] | None = None
 
 
+# -- integrations (Phase 8) -----------------------------------------------------------
+
+
+class IntegrationPlatformOut(BaseModel):
+    """One active external platform. ``ephemeral_key`` warns that the tool
+    signing key was generated at startup (dev mode; launches break when a
+    restart rotates the published JWKS)."""
+
+    id: str
+    name: str
+    issuer: str
+    features: list[str] = []
+    ephemeral_key: bool = False
+
+
+class ExternalLinkIn(BaseModel):
+    course_id: str
+    platform: str = "canvas-lms"
+    external_course_id: str = Field(min_length=1, max_length=64)
+
+
+class ExternalLinkOut(ORMModel):
+    id: str
+    course_id: str
+    platform: str
+    external_course_id: str
+    context_id: str
+    context_title: str
+    last_synced_at: datetime | None
+    created_at: datetime
+    # Grade-queue counts so the course view renders health at a glance.
+    grades_pending: int = 0
+    grades_delivered: int = 0
+    grades_failed: int = 0
+
+
+class RosterSyncOut(BaseModel):
+    roster: int  # members the platform reported
+    added: int  # new enrollments
+    provisioned: int  # accounts pre-created (claimed on first launch)
+    removed: int  # drops (platform-mapped students no longer on the roster)
+    skipped: int  # members without an e-mail to key an account on
+
+
+class GradePassbackOut(ORMModel):
+    id: str
+    assignment_id: str
+    user_id: str
+    score_given: int
+    score_maximum: int
+    status: str  # pending | delivered | failed
+    attempts: int
+    next_attempt_at: datetime
+    receipt: str
+    error: str | None
+    created_at: datetime
+    delivered_at: datetime | None
+    # Enrichment for the teacher's course view.
+    student_handle: str = ""
+    assignment_title: str = ""
+
+
 # -- webhooks -----------------------------------------------------------------------
 
 

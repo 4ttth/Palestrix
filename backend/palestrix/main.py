@@ -24,6 +24,7 @@ from .api import (
     courses,
     gamification,
     instances,
+    integrations,
     labs,
     plugins,
     sandbox,
@@ -95,6 +96,12 @@ async def lifespan(app: FastAPI):
 
     activate_configured_cloud()
 
+    # Phase 8: external platforms. Nothing answers by default;
+    # PALESTRIX_CANVAS_ISSUER + .._CLIENT_ID activate the Canvas LMS adapter.
+    from .integrations import activate_configured_platforms
+
+    activate_configured_platforms()
+
     reaper = start_reaper()
     yield
     if reaper is not None:
@@ -141,6 +148,7 @@ def create_app() -> FastAPI:
     api.include_router(admin.router)
     api.include_router(plugins.router)
     api.include_router(webhooks.router)
+    api.include_router(integrations.router)
     app.include_router(api)
 
     @app.get("/healthz", tags=["meta"])

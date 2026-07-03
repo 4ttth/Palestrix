@@ -16,6 +16,7 @@ import sys
 from .config import get_settings
 from .db import Base, engine
 from . import models  # noqa: F401  (register all tables on Base.metadata)
+from .integrations import activate_configured_platforms
 from .orchestration import activate_configured_adapters
 from .orchestration.reaper import start_reaper
 from .sandbox import activate_configured_detonator
@@ -46,6 +47,7 @@ def main() -> int:
     activate_configured_adapters()
     activate_configured_detonator()
     activate_configured_cloud()
+    activate_configured_platforms()  # Phase 8: grade passbacks retry on the reaper tick
     reaper = start_reaper()
     logger.info(
         "worker up: queue=palestrix redis=%s reaper=%s",

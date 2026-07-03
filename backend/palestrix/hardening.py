@@ -58,6 +58,14 @@ def production_readiness(settings: Settings) -> list[str]:
         findings.append("PALESTRIX_SANDBOX_COORDINATOR_VERIFY_TLS is off")
     if settings.cloudstack_endpoint and not settings.cloudstack_verify_tls:
         findings.append("PALESTRIX_CLOUDSTACK_VERIFY_TLS is off")
+    if settings.canvas_issuer and not settings.canvas_verify_tls:
+        findings.append("PALESTRIX_CANVAS_VERIFY_TLS is off")
+    if settings.canvas_issuer and not settings.canvas_tool_private_key:
+        findings.append(
+            "PALESTRIX_CANVAS_TOOL_PRIVATE_KEY is empty; the tool signing key "
+            "would rotate on every restart and Canvas, which pins the "
+            "published JWKS, would reject launches"
+        )
     if settings.queue_backend == "inline":
         findings.append(
             "PALESTRIX_QUEUE_BACKEND is inline; production provisions through "

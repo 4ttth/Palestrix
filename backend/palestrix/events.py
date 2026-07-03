@@ -33,6 +33,8 @@ EVENT_TYPES = {
     "flag.captured",
     "palestras.changed",
     "grade.posted",
+    "grade.delivered",
+    "roster.synced",
     "writeup.published",
     "sandbox.report.ready",
 }

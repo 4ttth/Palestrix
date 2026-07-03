@@ -243,6 +243,15 @@ def grade(
             "grade": body.grade,
         },
     )
+    # Phase 8: grade.posted triggers external passback — the score queues for
+    # every linked platform that can receive it (mapped student, bound line
+    # item) and is delivered right after this request commits.
+    from ..integrations.passback import dispatch_due_passbacks, queue_grade_passbacks
+
+    assignment = db.get(Assignment, assignment_id)
+    queued = queue_grade_passbacks(db, course, assignment, submission)
     db.commit()
     background.add_task(dispatch_pending, SessionLocal())
+    if queued:
+        background.add_task(dispatch_due_passbacks, SessionLocal())
     return submission

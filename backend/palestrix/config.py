@@ -129,6 +129,28 @@ class Settings(BaseSettings):
     # Static pre-check heuristics: a high-entropy payload reads as packed.
     sandbox_entropy_packed_threshold: float = 7.2
 
+    # Canvas LMS integration (Phase 8). Setting the issuer + client id
+    # activates the adapter (docs/integrations-canvas-lms.md): LTI 1.3
+    # launches, NRPS roster sync, AGS grade passback, and Deep Linking 2.0.
+    # The endpoint URLs default to Canvas's conventional paths under the
+    # issuer; override them only for a nonstandard mount.
+    canvas_issuer: str = ""  # e.g. https://canvas.example.edu
+    canvas_client_id: str = ""  # the LTI Developer Key's client id
+    canvas_deployment_id: str = ""  # optional; checked on launch when set
+    canvas_auth_url: str = ""  # default: <issuer>/api/lti/authorize_redirect
+    canvas_jwks_url: str = ""  # default: <issuer>/api/lti/security/jwks
+    canvas_token_url: str = ""  # default: <issuer>/login/oauth2/token
+    # The tool's RS256 signing key (PEM). Empty generates an ephemeral dev
+    # key at startup — fine locally, flagged by the production boot guard
+    # because Canvas pins the tool JWKS and restarts would rotate it.
+    canvas_tool_private_key: str = ""
+    canvas_verify_tls: bool = True
+    canvas_timeout_seconds: float = 20.0
+    # Grade passback queue: exponential backoff (2^attempts minutes) until
+    # delivered, then marked failed after this many attempts; failures stay
+    # visible in the teacher's course view and can be retried manually.
+    grade_passback_max_attempts: int = 5
+
     # Gamification (Phase 3) — the balance rules the service enforces. All
     # earning is student-only (rbac-matrix.md); staff have no earn path.
     #
