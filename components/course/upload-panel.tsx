@@ -1,13 +1,16 @@
 "use client";
 
 /*
- * Teacher upload workflow with progressive disclosure.
+ * Teacher upload workflow with progressive disclosure, live (Phase 5).
  *
- * Basic mode: one file input for quiz/assignment assets (stored in MinIO/S3).
- * Advanced mode: the same form grows into environment publishing, either a
- * Dockerfile/compose archive or a Proxmox VM template, plus GUI choice,
- * TTL, and tenant isolation. Phase 4 wires this to
- * POST /api/v1/labs/templates (multipart) and the orchestration queue.
+ * Basic mode: creates an assignment on the selected course
+ * (POST /courses/{id}/assignments) and attaches the file to object storage
+ * (POST .../attachment).
+ *
+ * Advanced mode: publishes a live environment through
+ * POST /labs/templates (multipart) — a Dockerfile/compose archive for
+ * container labs or a Proxmox template name for VM labs — and, when a
+ * course is selected, files a matching "lab" assignment so students see it.
  */
 
 import { useState } from "react";
@@ -15,18 +18,101 @@ import { CloudArrowUp, FileArchive, HardDrive } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { api, ApiError } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
+import type { AssignmentOut, CourseOut, LabTemplateOut } from "@/lib/api/types";
 
-const vmTemplates = [
-  "kali-web:2.1 (Kali Linux, 2 vCPU, 4 GB)",
-  "forensics-win11:3.0 (Windows 11, 4 vCPU, 8 GB)",
-  "pwn-arena:1.9 (Debian, 1 vCPU, 1 GB)",
-];
-
-export function UploadPanel() {
+export function UploadPanel({
+  course,
+  onPublished,
+}: {
+  course: CourseOut | null;
+  onPublished?: () => void;
+}) {
   const [advanced, setAdvanced] = useState(false);
   const [envKind, setEnvKind] = useState<"container" | "vm">("container");
   const [gui, setGui] = useState<"gui" | "no-gui">("no-gui");
+  const [title, setTitle] = useState("");
+  const [slug, setSlug] = useState("");
+  const [vmTemplate, setVmTemplate] = useState("");
+  const [ttl, setTtl] = useState(90);
+  const [file, setFile] = useState<File | null>(null);
+  const [archive, setArchive] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function publish() {
+    setNotice(null);
+    if (title.trim().length < 4) {
+      setNotice({ ok: false, text: "Give it a title (at least 4 characters)." });
+      return;
+    }
+    setBusy(true);
+    try {
+      if (!advanced) {
+        if (!course) throw new ApiError(0, "Select a course first.");
+        if (!file) throw new ApiError(0, "Pick a file to attach.");
+        const assignment = await api.post<AssignmentOut>(
+          `/api/v1/courses/${course.id}/assignments`,
+          { title: title.trim(), kind: "file" }
+        );
+        const form = new FormData();
+        form.append("file", file);
+        await api.postForm(
+          `/api/v1/courses/${course.id}/assignments/${assignment.id}/attachment`,
+          form
+        );
+        setNotice({ ok: true, text: `Assignment "${title.trim()}" published.` });
+      } else {
+        if (!/^[a-z0-9-]+:[0-9.]+$/.test(slug)) {
+          throw new ApiError(0, 'Slug must look like "name:version", e.g. log-triage:1.4.');
+        }
+        const form = new FormData();
+        form.append("slug", slug);
+        form.append("title", title.trim());
+        form.append("kind", envKind);
+        form.append("access_mode", gui);
+        form.append("ttl_minutes_default", String(ttl));
+        form.append("ttl_minutes_max", String(Math.max(ttl, 240)));
+        if (envKind === "container") {
+          if (!archive)
+            throw new ApiError(0, "Container labs need a Dockerfile/compose archive.");
+          form.append("archive", archive);
+        } else {
+          if (!vmTemplate.trim())
+            throw new ApiError(0, "VM labs need the Proxmox template name.");
+          form.append("vm_template", vmTemplate.trim());
+        }
+        const template = await api.postForm<LabTemplateOut>(
+          "/api/v1/labs/templates",
+          form
+        );
+        if (course) {
+          await api.post(`/api/v1/courses/${course.id}/assignments`, {
+            title: title.trim(),
+            kind: "lab",
+            lab_template_id: template.id,
+          });
+        }
+        setNotice({
+          ok: true,
+          text: `Environment ${template.slug} published${course ? " and assigned" : ""}.`,
+        });
+      }
+      setTitle("");
+      setSlug("");
+      setFile(null);
+      setArchive(null);
+      onPublished?.();
+    } catch (err) {
+      setNotice({
+        ok: false,
+        text: err instanceof ApiError ? err.message : "Publishing failed.",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div className="rounded-(--radius-card) border border-border bg-surface">
@@ -34,7 +120,9 @@ export function UploadPanel() {
         <div>
           <h3 className="text-sm font-semibold tracking-tight">New assignment material</h3>
           <p className="text-[13px] text-muted">
-            Start with a file. Toggle advanced to publish a live environment.
+            {course
+              ? `Publishing to ${course.code}. Toggle advanced for a live environment.`
+              : "Select a course, or publish a live environment platform-wide."}
           </p>
         </div>
         <label className="flex cursor-pointer items-center gap-2.5 text-[13px] font-medium">
@@ -60,24 +148,56 @@ export function UploadPanel() {
       </div>
 
       <div className="space-y-5 p-5">
-        {/* Basic mode: always visible */}
         <div className="grid gap-2">
-          <Label htmlFor="asset">Assignment file</Label>
-          <label
-            htmlFor="asset"
-            className="flex cursor-pointer flex-col items-center gap-2 rounded-(--radius-input) border border-dashed border-border bg-surface-2/50 px-6 py-8 text-center transition-colors hover:border-accent"
-          >
-            <CloudArrowUp size={26} className="text-muted" />
-            <span className="text-sm font-medium">
-              Drop a PDF, quiz export, or archive here
-            </span>
-            <span className="text-xs text-muted">Up to 200 MB, stored in object storage</span>
-          </label>
-          <input id="asset" type="file" className="sr-only" />
+          <Label htmlFor="material-title">Title</Label>
+          <Input
+            id="material-title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder={advanced ? "Blue Team: Log Triage Under Fire" : "Quiz: TCP fundamentals"}
+          />
         </div>
+
+        {!advanced && (
+          <div className="grid gap-2">
+            <Label htmlFor="asset">Assignment file</Label>
+            <label
+              htmlFor="asset"
+              className="flex cursor-pointer flex-col items-center gap-2 rounded-(--radius-input) border border-dashed border-border bg-surface-2/50 px-6 py-8 text-center transition-colors hover:border-accent"
+            >
+              <CloudArrowUp size={26} className="text-muted" />
+              <span className="text-sm font-medium">
+                {file ? file.name : "Drop a PDF, quiz export, or archive here"}
+              </span>
+              <span className="text-xs text-muted">
+                Up to 200 MB, stored in object storage
+              </span>
+            </label>
+            <input
+              id="asset"
+              type="file"
+              className="sr-only"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+          </div>
+        )}
 
         {advanced && (
           <div className="space-y-5 rounded-(--radius-input) border border-border bg-surface-2/40 p-4">
+            <div className="grid gap-2">
+              <Label htmlFor="env-slug">Template slug</Label>
+              <Input
+                id="env-slug"
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
+                placeholder="log-triage:1.4"
+                className="font-mono"
+              />
+              <p className="text-[13px] text-muted">
+                name:version — how launches and the registry refer to it.
+              </p>
+            </div>
+
             <fieldset>
               <legend className="text-[13px] font-medium">Environment source</legend>
               <div className="mt-2 grid gap-3 sm:grid-cols-2">
@@ -126,23 +246,30 @@ export function UploadPanel() {
 
             {envKind === "vm" && (
               <div className="grid gap-2">
-                <Label htmlFor="vm-template">VM template</Label>
-                <select
+                <Label htmlFor="vm-template">Proxmox template name</Label>
+                <Input
                   id="vm-template"
-                  className="h-10 w-full rounded-(--radius-input) border border-border bg-surface px-3 text-sm"
-                >
-                  {vmTemplates.map((t) => (
-                    <option key={t}>{t}</option>
-                  ))}
-                  <option>Request a new template from an administrator</option>
-                </select>
+                  value={vmTemplate}
+                  onChange={(e) => setVmTemplate(e.target.value)}
+                  placeholder="kali-web-2.1"
+                  className="font-mono"
+                />
+                <p className="text-[13px] text-muted">
+                  As it appears in the Proxmox datacenter. Ask an administrator
+                  to build one from the ISO library.
+                </p>
               </div>
             )}
 
             {envKind === "container" && (
               <div className="grid gap-2">
                 <Label htmlFor="archive">Environment archive</Label>
-                <Input id="archive" type="file" className="pt-2" />
+                <Input
+                  id="archive"
+                  type="file"
+                  className="pt-2"
+                  onChange={(e) => setArchive(e.target.files?.[0] ?? null)}
+                />
                 <p className="text-[13px] text-muted">
                   A .zip or .tar.gz containing a Dockerfile or docker-compose.yml
                   at the root.
@@ -150,7 +277,7 @@ export function UploadPanel() {
               </div>
             )}
 
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <fieldset>
                 <legend className="text-[13px] font-medium">Student access</legend>
                 <div className="mt-2 flex gap-2">
@@ -184,29 +311,39 @@ export function UploadPanel() {
               </fieldset>
               <div className="grid content-start gap-2">
                 <Label htmlFor="ttl">TTL (minutes)</Label>
-                <Input id="ttl" type="number" defaultValue={90} min={15} max={480} />
-              </div>
-              <div className="grid content-start gap-2">
-                <Label htmlFor="tenant">Tenant isolation</Label>
-                <select
-                  id="tenant"
-                  className="h-10 w-full rounded-(--radius-input) border border-border bg-surface px-3 text-sm"
-                >
-                  <option>Per section (hau-bscs-3a)</option>
-                  <option>Per student</option>
-                  <option>Shared event network</option>
-                </select>
+                <Input
+                  id="ttl"
+                  type="number"
+                  value={ttl}
+                  min={15}
+                  max={480}
+                  onChange={(e) => setTtl(Number(e.target.value) || 90)}
+                />
               </div>
             </div>
           </div>
         )}
 
+        <div aria-live="polite">
+          {notice && (
+            <p
+              className={cn(
+                "text-[13px]",
+                notice.ok ? "text-running" : "text-danger"
+              )}
+            >
+              {notice.text}
+            </p>
+          )}
+        </div>
+
         <div className="flex justify-end gap-3">
-          <Button variant="ghost" size="sm">
-            Save draft
-          </Button>
-          <Button size="sm">
-            {advanced ? "Publish environment" : "Attach file"}
+          <Button size="sm" onClick={publish} disabled={busy}>
+            {busy
+              ? "Publishing..."
+              : advanced
+                ? "Publish environment"
+                : "Attach file"}
           </Button>
         </div>
       </div>

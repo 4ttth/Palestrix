@@ -6,29 +6,46 @@ Students train on real ephemeral VMs and containers, earn and spend the
 Palestras currency, and compete in a CTF arena; teachers publish labs
 without touching infrastructure; admins run the range from one console.
 
-**Status: Phase 3 complete.** The repository contains the full frontend
-template set on a locked design theme (Phase 1), the implementation
-documentation for both deployment use cases, the FastAPI core API
-(Phase 2): passkey auth, RBAC, the versioned `/api/v1` surface, API-key +
-OAuth2 client-credentials auth, the webhook/event bus, and object storage
-wiring — the plugin framework (Phase 2b): server-plugin discovery,
-capability scoping, config encryption, crash isolation, the UI slot
-system, and both reference plugins under `plugins/` — and the gamification
-service (Phase 3): the append-only Palestras ledger as the single
-minter/burner, per-source daily caps, solve-count-scaled flag awards, the
-first-blood bonus, writeup earning, streaks with a weekly checkpoint,
-recency-decayed community score, and the student-only leaderboards. See
+**Status: Phase 5 complete.** The repository contains the full frontend on
+a locked design theme (Phase 1), the implementation documentation for both
+deployment use cases, the FastAPI core API (Phase 2): passkey auth, RBAC,
+the versioned `/api/v1` surface, API-key + OAuth2 client-credentials auth,
+the webhook/event bus, and object storage wiring — the plugin framework
+(Phase 2b): server-plugin discovery, capability scoping, config encryption,
+crash isolation, the UI slot system, and both reference plugins under
+`plugins/` — the gamification service (Phase 3): the append-only Palestras
+ledger as the single minter/burner, per-source daily caps,
+solve-count-scaled flag awards, the first-blood bonus, writeup earning,
+streaks with a weekly checkpoint, recency-decayed community score, and the
+student-only leaderboards — orchestration (Phase 4): the provider
+abstraction, Docker and Proxmox VE adapters, the SSE log stream, and the
+TTL reaper — and the live feature surfaces (Phase 5): every product screen
+wired to `/api/v1` through a typed client (`lib/api/`), real passkey
+ceremonies, session-guarded routing, launch/stop/extend/destroy with
+server-authoritative TTL countdowns, live flag submission, votes and
+writeups, teacher publishing, and the admin console. See
 [backend/README.md](backend/README.md) to run the API and
 [docs/plugin-development.md](docs/plugin-development.md) to write a
-plugin. Next: Phase 4 (orchestration + TTL reaper).
+plugin. Next: Phase 6 (malware sandbox module).
 
-## Run the templates
+## Run it
 
 ```bash
+# Terminal 1: the core API (see backend/README.md for the venv setup)
+cd backend
+python -m palestrix.seed                        # demo tenant, users, event
+uvicorn palestrix.main:app --reload --port 8000
+
+# Terminal 2: the frontend
 npm install
 npm run dev        # http://localhost:3000
-npm run build      # production build (all 13 routes compile statically)
+npm run build      # production build (all 14 routes compile)
 ```
+
+Sign in with the development seed account `rafaela@example.edu` /
+`palestrix-dev-only!` (see `backend/palestrix/seed.py` for the other
+roles). The frontend reads `NEXT_PUBLIC_PALESTRIX_API` for the API origin,
+defaulting to `http://localhost:8000`.
 
 Screens:
 
@@ -47,8 +64,10 @@ Screens:
 | `/admin/infrastructure` | Nodes, instance registry, ISO library, tenants             |
 
 
-All product data is sample data from `lib/mock.ts`, replaced by live API
-responses from Phase 2 onward.
+Every product surface renders live `/api/v1` responses (Phase 5): the wire
+types live in [lib/api/types.ts](lib/api/types.ts), the client and session
+layer in [lib/api/](lib/api/). `lib/mock.ts` retains only the marketing
+page's demo log replay.
 
 ## Design system
 
@@ -64,10 +83,13 @@ shadcn-style primitives in `components/ui/`.
 Key components:
 
 - `components/three/HeroModel.tsx`: isolated, lazy-loaded 3D hero leaf.
-- `components/lab/ProvisioningLog.tsx`: real provisioning log stream
-(SSE contract for Phase 4; sample replay in templates). No fake bars.
-- `components/lab/Countdown.tsx`: server-authoritative TTL countdown.
-- `components/course/upload-panel.tsx`: teacher basic/advanced publishing.
+- `components/lab/ProvisioningLog.tsx`: real provisioning log stream over
+authenticated SSE (fetch-based; EventSource cannot carry the bearer
+token). No fake bars.
+- `components/lab/Countdown.tsx`: TTL countdown off the server's expiry
+timestamp; re-syncs on extend.
+- `components/course/upload-panel.tsx`: teacher basic/advanced publishing,
+wired to assignments + `/labs/templates`.
 
 
 
@@ -116,9 +138,18 @@ Phase 4: orchestration + TTL reaper. **Done** — 6 tests in test_orchestration.
 SSE log stream replay, stop/destroy transitions, TTL reaper pass (quota
 release), provision failure retry policy (up to 2 attempts), Docker adapter
 (CLI-driven with recorded runner), and Proxmox VE adapter (httpx MockTransport).
-Full test suite: 36 tests pass. Next: Phase 5 (live feature surfaces).
 
-Phase 5: live feature surfaces. 
+Phase 5: live feature surfaces. **Done** — typed API client + session layer
+(`lib/api/`), passkey login/enrollment via SimpleWebAuthn, and every surface
+live: dashboard (launch panel, ledger, leaderboard), academy (per-caller
+module completion), courses (role-aware, live counts, wired publishing),
+labs (SSE log stream, TTL, stop/extend/destroy), compete (solved state,
+cooldown handling, first-blood feed), community (votes, composer),
+admin (providers, registry, ISO library, tenants, reaper trigger), and an
+honest 501 state for the sandbox. The plugin `ScopedApi` now fetches the
+real API on the same signature. Backend: display-enrichment fields +
+`GET /admin/isos` + `GET /admin/providers` (docs/public-api.md §Display
+enrichment). Full test suite: 42 tests pass.
 
 Phase 6: sandbox module. 
 

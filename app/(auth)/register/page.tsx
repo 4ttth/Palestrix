@@ -1,22 +1,30 @@
 "use client";
 
 /*
- * Registration gateway. Collects identity, then offers passkey enrollment
- * as the primary credential; the password is the fallback. Inline
- * validation demonstrates the full error state cycle for the template.
+ * Registration gateway, live against POST /api/v1/auth/register. The
+ * account is created with the password fallback, then the passkey
+ * enrollment ceremony runs immediately with the fresh session token —
+ * declining the browser prompt still lands on the dashboard (the passkey
+ * can be added later).
  */
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FingerprintSimple } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { api, ApiError, writeToken } from "@/lib/api/client";
+import { enrollPasskey } from "@/lib/api/passkeys";
+import type { TokenOut } from "@/lib/api/types";
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [form, setForm] = useState({ name: "", handle: "", email: "", password: "" });
   const [errors, setErrors] = useState<Partial<typeof form>>({});
-  const [submitting, setSubmitting] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [phase, setPhase] = useState<"idle" | "creating" | "passkey">("idle");
 
   function set(field: keyof typeof form) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -36,12 +44,31 @@ export default function RegisterPage() {
     return Object.keys(next).length === 0;
   }
 
-  function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setFailure(null);
     if (!validate()) return;
-    setSubmitting(true);
-    /* Phase 2: POST /api/v1/auth/register, then WebAuthn create() ceremony. */
-    setTimeout(() => setSubmitting(false), 900);
+    setPhase("creating");
+    try {
+      const token = await api.post<TokenOut>("/api/v1/auth/register", form);
+      writeToken(token.access_token);
+    } catch (err) {
+      setPhase("idle");
+      if (err instanceof ApiError && err.status === 409) {
+        setFailure("That email or handle is already in use. Sign in instead?");
+      } else {
+        setFailure(err instanceof ApiError ? err.message : "Registration failed. Try again.");
+      }
+      return;
+    }
+    // Account exists; the passkey is a bonus, never a blocker.
+    setPhase("passkey");
+    try {
+      await enrollPasskey();
+    } catch {
+      /* prompt dismissed or unsupported — password fallback stands */
+    }
+    router.replace("/dashboard");
   }
 
   return (
@@ -126,12 +153,19 @@ export default function RegisterPage() {
         </div>
 
         <div aria-live="polite">
-          {submitting && (
+          {phase === "creating" && (
             <p className="text-[13px] text-muted">Creating your account...</p>
           )}
+          {phase === "passkey" && (
+            <p className="text-[13px] text-muted">
+              Account created. Your browser is asking about a passkey — decline
+              to keep password-only.
+            </p>
+          )}
+          {failure && <p className="text-[13px] text-danger">{failure}</p>}
         </div>
 
-        <Button type="submit" size="lg" className="w-full" disabled={submitting}>
+        <Button type="submit" size="lg" className="w-full" disabled={phase !== "idle"}>
           <FingerprintSimple size={19} weight="bold" />
           Continue to passkey setup
         </Button>

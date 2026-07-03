@@ -36,6 +36,35 @@ the account that issued it.
 /api/v1/webhooks      subscription management
 ```
 
+## Display enrichment (Phase 5)
+
+The live UI renders API responses directly, so several response models carry
+caller-scoped or denormalized fields the server fills in — additive only,
+never a breaking change:
+
+```
+ModuleOut.completed            true when the caller completed the module
+ChallengeOut.solved            true when the caller solved the challenge
+ChallengeOut.first_blood_at    timestamp behind the first-blood feed
+WriteupOut.author_handle       author display handle
+WriteupOut.comments            comment count
+CourseOut.students             enrollment count
+CourseOut.assignments          assignment count
+AssignmentOut.submissions      submission count (and .graded)
+InstanceOut.kind / access_mode / template_slug / template_title /
+            owner_handle      registry rows render without follow-up requests
+TenantOut.instances_active     live usage against instance_quota
+```
+
+Two admin read endpoints (both `infra:manage`) complete the infrastructure
+console:
+
+```
+GET /api/v1/admin/isos        objects in the isos bucket (key, size, mtime)
+GET /api/v1/admin/providers   active instance providers, their kinds, and
+                              how many live instances each carries
+```
+
 ## Gamification surface
 
 The gamification service (Phase 3) owns the Palestras ledger and is the only

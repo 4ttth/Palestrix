@@ -21,6 +21,11 @@ def _with_votes(db: Session, writeup: Writeup) -> schemas.WriteupOut:
     )
     out = schemas.WriteupOut.model_validate(writeup)
     out.votes = votes
+    author = db.get(User, writeup.author_id)
+    out.author_handle = author.handle if author else ""
+    out.comments = db.scalar(
+        select(func.count(Comment.id)).where(Comment.writeup_id == writeup.id)
+    )
     return out
 
 

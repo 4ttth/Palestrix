@@ -109,6 +109,8 @@ class CourseOut(ORMModel):
     section: str
     tenant_id: str | None
     teacher_id: str
+    students: int = 0  # enrollment count
+    assignments: int = 0
 
 
 class AssignmentIn(BaseModel):
@@ -126,6 +128,8 @@ class AssignmentOut(ORMModel):
     due_at: datetime | None
     lab_template_id: str | None
     storage_key: str | None
+    submissions: int = 0
+    graded: int = 0
 
 
 class SubmissionOut(ORMModel):
@@ -156,6 +160,7 @@ class ModuleOut(ORMModel):
     title: str
     position: int
     palestras_award: int
+    completed: bool = False  # by the calling principal
 
 
 # -- labs and instances -------------------------------------------------------------
@@ -188,6 +193,13 @@ class InstanceOut(ORMModel):
     proto: str
     expires_at: datetime | None
     created_at: datetime
+    # Display enrichment (filled by the router from the template and owner
+    # rows) so clients never need N+1 follow-up requests.
+    kind: str = ""
+    access_mode: str = ""
+    template_slug: str = ""
+    template_title: str = ""
+    owner_handle: str = ""
 
 
 class InstanceLogOut(ORMModel):
@@ -263,6 +275,8 @@ class WriteupOut(ORMModel):
     published: bool
     created_at: datetime
     votes: int = 0
+    author_handle: str = ""
+    comments: int = 0
 
 
 class CommentIn(BaseModel):
@@ -303,6 +317,8 @@ class ChallengeOut(ORMModel):
     points: int
     solves: int = 0
     first_blood: str | None = None  # handle
+    first_blood_at: datetime | None = None
+    solved: bool = False  # by the calling principal
 
 
 class FlagSubmitIn(BaseModel):
@@ -342,10 +358,23 @@ class TenantOut(ORMModel):
     cpu_cap: int
     ram_cap_gb: int
     network_cidr: str
+    instances_active: int = 0
 
 
 class RoleChangeIn(BaseModel):
     role: Role
+
+
+class StoredObjectOut(BaseModel):
+    key: str
+    size: int
+    last_modified: datetime | None = None
+
+
+class ProviderOut(BaseModel):
+    name: str
+    kinds: list[str]
+    instances_active: int = 0
 
 
 # -- plugins ------------------------------------------------------------------

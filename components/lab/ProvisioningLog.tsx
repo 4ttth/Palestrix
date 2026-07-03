@@ -3,18 +3,22 @@
 /*
  * Real provisioning progress, not a fake bar.
  *
- * Contract (Phase 4): pass `streamUrl` and the component subscribes to the
- * orchestration worker's Server-Sent Events endpoint
- * (GET /api/v1/instances/{id}/logs/stream) and appends real Proxmox/Docker
- * spin-up lines as they happen.
+ * Live mode (Phase 5): pass `instanceId` and the component follows the
+ * orchestration worker's SSE endpoint
+ * (GET /api/v1/instances/{id}/logs/stream) through lib/api/stream.ts —
+ * fetch-based, because EventSource cannot carry the Authorization header.
+ * The stream replays every line so far, follows while provisioning, and
+ * closes with a state event once the instance settles (`onSettled`).
  *
- * Template mode (Phase 1): pass `lines` (sample data, marked mock in
- * lib/mock.ts) and the component replays them at a readable cadence.
- * Under prefers-reduced-motion the full log renders at once.
+ * Replay mode: pass `lines` (sample data) and the component replays them at
+ * a readable cadence — kept for template/docs surfaces. Under
+ * prefers-reduced-motion the full log renders at once.
  */
 
 import { useEffect, useRef, useState } from "react";
 import { useReducedMotion } from "motion/react";
+import { streamInstanceLogs } from "@/lib/api/stream";
+import type { InstanceState } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
 export type LogLine = {
@@ -29,35 +33,46 @@ const levelClass: Record<LogLine["level"], string> = {
   warn: "text-palestras",
 };
 
+/** "2026-07-03T09:14:02+00:00" -> local "09:14:02"; passthrough otherwise. */
+function clockOf(t: string): string {
+  const d = new Date(t);
+  if (Number.isNaN(d.getTime())) return t;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 export function ProvisioningLog({
   lines = [],
-  streamUrl,
+  instanceId,
+  onSettled,
   replay = true,
   className,
 }: {
   lines?: LogLine[];
-  streamUrl?: string;
+  instanceId?: string;
+  /** Called once when the live stream closes with the settled state. */
+  onSettled?: (state: InstanceState | "unknown") => void;
   replay?: boolean;
   className?: string;
 }) {
   const reduce = useReducedMotion();
   const [visible, setVisible] = useState<LogLine[]>(
-    replay && !reduce && !streamUrl ? [] : lines
+    replay && !reduce && !instanceId ? [] : lines
   );
+  const [streamError, setStreamError] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const settledRef = useRef(onSettled);
+  settledRef.current = onSettled;
 
   useEffect(() => {
-    if (streamUrl) {
-      const es = new EventSource(streamUrl);
-      es.onmessage = (e) => {
-        try {
-          const line = JSON.parse(e.data) as LogLine;
-          setVisible((v) => [...v, line]);
-        } catch {
-          /* skip malformed frames */
-        }
-      };
-      return () => es.close();
+    if (instanceId) {
+      setVisible([]);
+      setStreamError(false);
+      return streamInstanceLogs(instanceId, {
+        onLine: (line) => setVisible((v) => [...v, line as LogLine]),
+        onState: (state) => settledRef.current?.(state),
+        onError: () => setStreamError(true),
+      });
     }
 
     if (!replay || reduce) {
@@ -73,7 +88,7 @@ export function ProvisioningLog({
       if (i >= lines.length) clearInterval(id);
     }, 420);
     return () => clearInterval(id);
-  }, [streamUrl, replay, reduce, lines]);
+  }, [instanceId, replay, reduce, lines]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -91,13 +106,19 @@ export function ProvisioningLog({
       )}
     >
       {visible.length === 0 ? (
-        <p className="text-muted">waiting for orchestration worker...</p>
+        <p className="text-muted">
+          {streamError
+            ? "log stream unavailable; reload to retry"
+            : "waiting for orchestration worker..."}
+        </p>
       ) : (
         <ol>
           {visible.map((line, i) => (
             <li key={`${line.t}-${i}`} className="flex gap-3">
-              <span className="shrink-0 text-muted/70">{line.t}</span>
-              <span className={levelClass[line.level]}>{line.msg}</span>
+              <span className="shrink-0 text-muted/70">{clockOf(line.t)}</span>
+              <span className={levelClass[line.level] ?? "text-muted"}>
+                {line.msg}
+              </span>
             </li>
           ))}
         </ol>

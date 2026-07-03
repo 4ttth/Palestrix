@@ -1,5 +1,5 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import schemas
@@ -27,6 +27,32 @@ def _require_course_teacher(principal: Principal, course: Course) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not your course")
 
 
+def _course_out(db: Session, course: Course) -> schemas.CourseOut:
+    out = schemas.CourseOut.model_validate(course)
+    out.students = db.scalar(
+        select(func.count(Enrollment.id)).where(Enrollment.course_id == course.id)
+    )
+    out.assignments = db.scalar(
+        select(func.count(Assignment.id)).where(Assignment.course_id == course.id)
+    )
+    return out
+
+
+def _assignment_out(db: Session, assignment: Assignment) -> schemas.AssignmentOut:
+    out = schemas.AssignmentOut.model_validate(assignment)
+    out.submissions = db.scalar(
+        select(func.count(Submission.id)).where(
+            Submission.assignment_id == assignment.id
+        )
+    )
+    out.graded = db.scalar(
+        select(func.count(Submission.id)).where(
+            Submission.assignment_id == assignment.id, Submission.grade.is_not(None)
+        )
+    )
+    return out
+
+
 @router.post("", response_model=schemas.CourseOut, status_code=201)
 def create_course(
     body: schemas.CourseIn,
@@ -36,7 +62,7 @@ def create_course(
     course = Course(**body.model_dump(), teacher_id=principal.user_id)
     db.add(course)
     db.commit()
-    return course
+    return _course_out(db, course)
 
 
 @router.get("", response_model=list[schemas.CourseOut])
@@ -44,16 +70,18 @@ def list_courses(
     principal: Principal = Depends(get_principal), db: Session = Depends(get_db)
 ):
     if principal.role in (Role.admin, Role.superadmin):
-        return db.scalars(select(Course)).all()
-    if principal.role is Role.teacher:
-        return db.scalars(
+        rows = db.scalars(select(Course)).all()
+    elif principal.role is Role.teacher:
+        rows = db.scalars(
             select(Course).where(Course.teacher_id == principal.user_id)
         ).all()
-    return db.scalars(
-        select(Course)
-        .join(Enrollment, Enrollment.course_id == Course.id)
-        .where(Enrollment.user_id == principal.user_id)
-    ).all()
+    else:
+        rows = db.scalars(
+            select(Course)
+            .join(Enrollment, Enrollment.course_id == Course.id)
+            .where(Enrollment.user_id == principal.user_id)
+        ).all()
+    return [_course_out(db, c) for c in rows]
 
 
 @router.post("/{course_id}/enroll", status_code=201)
@@ -89,7 +117,7 @@ def create_assignment(
     assignment = Assignment(course_id=course_id, **body.model_dump())
     db.add(assignment)
     db.commit()
-    return assignment
+    return _assignment_out(db, assignment)
 
 
 @router.get("/{course_id}/assignments", response_model=list[schemas.AssignmentOut])
@@ -110,9 +138,10 @@ def list_assignments(
             raise HTTPException(status.HTTP_403_FORBIDDEN, "not enrolled")
     elif principal.role is Role.teacher:
         _require_course_teacher(principal, course)
-    return db.scalars(
+    rows = db.scalars(
         select(Assignment).where(Assignment.course_id == course_id)
     ).all()
+    return [_assignment_out(db, a) for a in rows]
 
 
 @router.post(
@@ -139,7 +168,7 @@ def upload_assignment_file(
         "lab-archives", key, file.file, file.size or 0
     )
     db.commit()
-    return assignment
+    return _assignment_out(db, assignment)
 
 
 @router.post(

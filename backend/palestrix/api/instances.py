@@ -36,9 +36,25 @@ from ..models import (
 from ..orchestration.queue import enqueue
 from ..providers import add_log, provider_for_kind, provider_stop
 from ..rbac import Principal
+from ..models import User
 from .deps import get_principal, require_capability
 
 router = APIRouter(prefix="/instances", tags=["instances"])
+
+
+def _instance_out(db: Session, instance: Instance) -> schemas.InstanceOut:
+    """Fill the display-enrichment fields so clients render the registry
+    without chasing template/owner ids."""
+    out = schemas.InstanceOut.model_validate(instance)
+    template = db.get(LabTemplate, instance.template_id)
+    if template is not None:
+        out.kind = template.kind
+        out.access_mode = template.access_mode
+        out.template_slug = template.slug
+        out.template_title = template.title
+    owner = db.get(User, instance.owner_id)
+    out.owner_handle = owner.handle if owner else ""
+    return out
 
 
 @router.post("", response_model=schemas.InstanceOut, status_code=201)
@@ -99,7 +115,7 @@ def launch(
     enqueue("instance.provision", instance_id=instance.id)
     db.refresh(instance)
     background.add_task(dispatch_pending, SessionLocal())
-    return instance
+    return _instance_out(db, instance)
 
 
 @router.get("", response_model=list[schemas.InstanceOut])
@@ -111,12 +127,16 @@ def list_instances(
     if all_tenants:
         if not principal.can("instances:read-all"):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "admin only")
-        return db.scalars(select(Instance).order_by(Instance.created_at.desc())).all()
-    return db.scalars(
-        select(Instance)
-        .where(Instance.owner_id == principal.user_id)
-        .order_by(Instance.created_at.desc())
-    ).all()
+        rows = db.scalars(
+            select(Instance).order_by(Instance.created_at.desc())
+        ).all()
+    else:
+        rows = db.scalars(
+            select(Instance)
+            .where(Instance.owner_id == principal.user_id)
+            .order_by(Instance.created_at.desc())
+        ).all()
+    return [_instance_out(db, i) for i in rows]
 
 
 def _owned_or_admin(
@@ -138,7 +158,7 @@ def get_instance(
     principal: Principal = Depends(get_principal),
     db: Session = Depends(get_db),
 ):
-    return _owned_or_admin(db, principal, instance_id)
+    return _instance_out(db, _owned_or_admin(db, principal, instance_id))
 
 
 @router.get("/{instance_id}/logs", response_model=list[schemas.InstanceLogOut])
@@ -230,7 +250,7 @@ def stop_instance(
         add_log(db, instance.id, "provider inactive; registry-only stop", level="warn")
     instance.state = InstanceState.stopped
     db.commit()
-    return instance
+    return _instance_out(db, instance)
 
 
 @router.post("/{instance_id}/extend", response_model=schemas.InstanceOut)
@@ -279,7 +299,7 @@ def extend(
     add_log(db, instance.id, f"ttl extended by {body.minutes} min", level="warn")
     db.commit()
     background.add_task(dispatch_pending, SessionLocal())
-    return instance
+    return _instance_out(db, instance)
 
 
 @router.delete("/{instance_id}", response_model=schemas.InstanceOut, status_code=202)
@@ -303,4 +323,4 @@ def destroy(
     emit(db, "instance.expired", {"instance_id": instance.id, "reason": "user_destroy"})
     db.commit()
     background.add_task(dispatch_pending, SessionLocal())
-    return instance
+    return _instance_out(db, instance)

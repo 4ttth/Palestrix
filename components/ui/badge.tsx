@@ -13,10 +13,12 @@ const badgeVariants = cva(
       variant: {
         neutral: "bg-surface-2 text-muted",
         accent: "bg-accent-soft text-accent",
+        requested: "bg-provisioning-soft text-provisioning",
         provisioning: "bg-provisioning-soft text-provisioning",
         running: "bg-running-soft text-running",
         stopped: "bg-stopped-soft text-stopped",
         expired: "bg-expired-soft text-expired",
+        failed: "bg-expired-soft text-expired",
         palestras: "bg-palestras-soft text-palestras",
         danger: "bg-expired-soft text-expired",
       },

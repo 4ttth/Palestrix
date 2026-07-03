@@ -11,31 +11,23 @@ import {
   UsersThree,
   Flag,
   HardDrives,
+  type Icon,
 } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
-import { activeInstance } from "@/lib/mock";
+import { useApi } from "@/lib/api/hooks";
+import { useSession } from "@/lib/api/session";
+import type { InstanceOut } from "@/lib/api/types";
 
 /*
- * Product sidebar. Role-gating note: the Admin group renders only for
- * Administrator / Superadministrator once RBAC lands in Phase 2; the
- * template shows the superadmin view so every screen is reachable.
+ * Product sidebar, live: the Active lab entry tracks the caller's newest
+ * still-alive instance, the Admin group renders only for Administrator /
+ * Superadministrator (RBAC, Phase 2), and the footer reports the session's
+ * tenant and how many instances the caller is holding.
  */
-const learn = [
-  { href: "/dashboard", label: "Dashboard", icon: SquaresFour },
-  { href: "/academy", label: "Academy", icon: GraduationCap },
-  { href: "/courses", label: "Courses", icon: Books },
-  { href: `/labs/${activeInstance.id}`, label: "Active lab", icon: Cube },
-];
 
-const range = [
-  { href: "/sandbox", label: "Sandbox", icon: Bug },
-  { href: "/community", label: "Community", icon: UsersThree },
-  { href: "/compete", label: "Compete", icon: Flag },
-];
+type NavItem = { href: string; label: string; icon: Icon };
 
-const admin = [
-  { href: "/admin/infrastructure", label: "Infrastructure", icon: HardDrives },
-];
+const ALIVE = new Set(["requested", "provisioning", "running", "stopped"]);
 
 function NavGroup({
   title,
@@ -43,7 +35,7 @@ function NavGroup({
   pathname,
 }: {
   title: string;
-  items: typeof learn;
+  items: NavItem[];
   pathname: string;
 }) {
   return (
@@ -77,6 +69,33 @@ function NavGroup({
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { user } = useSession();
+  const { data: instances } = useApi<InstanceOut[]>("/api/v1/instances");
+
+  const alive = (instances ?? []).filter((i) => ALIVE.has(i.state));
+  const current = alive[0]; // newest first from the API
+
+  const learn: NavItem[] = [
+    { href: "/dashboard", label: "Dashboard", icon: SquaresFour },
+    { href: "/academy", label: "Academy", icon: GraduationCap },
+    { href: "/courses", label: "Courses", icon: Books },
+    ...(current
+      ? [{ href: `/labs/${current.id}`, label: "Active lab", icon: Cube }]
+      : []),
+  ];
+
+  const range: NavItem[] = [
+    { href: "/sandbox", label: "Sandbox", icon: Bug },
+    { href: "/community", label: "Community", icon: UsersThree },
+    { href: "/compete", label: "Compete", icon: Flag },
+  ];
+
+  const admin: NavItem[] = [
+    { href: "/admin/infrastructure", label: "Infrastructure", icon: HardDrives },
+  ];
+
+  const isAdmin = user.role === "admin" || user.role === "superadmin";
+
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-56 flex-col border-r border-border bg-surface lg:flex">
       <div className="flex h-14 items-center border-b border-border px-5">
@@ -87,12 +106,17 @@ export function Sidebar() {
       <nav className="flex-1 space-y-6 overflow-y-auto px-2.5 py-5">
         <NavGroup title="Learn" items={learn} pathname={pathname} />
         <NavGroup title="Range" items={range} pathname={pathname} />
-        <NavGroup title="Admin" items={admin} pathname={pathname} />
+        {isAdmin && <NavGroup title="Admin" items={admin} pathname={pathname} />}
       </nav>
       <div className="border-t border-border px-5 py-4 text-[11px] leading-relaxed text-muted">
-        Tenant <span className="font-mono text-foreground">hau-bscs-3a</span>
+        Tenant{" "}
+        <span className="font-mono text-foreground">
+          {user.tenant_id ?? "unassigned"}
+        </span>
         <br />
-        Quota <span className="font-mono text-foreground">2/3</span> instances
+        Holding{" "}
+        <span className="font-mono text-foreground">{alive.length}</span>{" "}
+        instance{alive.length === 1 ? "" : "s"}
       </div>
     </aside>
   );

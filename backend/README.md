@@ -1,4 +1,4 @@
-# PalestrIX Core API (Phase 2 + 2b + 3 + 4)
+# PalestrIX Core API (Phase 2 + 2b + 3 + 4 + 5)
 
 Python / FastAPI backend: passkey-first auth, RBAC, the versioned `/api/v1`
 surface, API-key and OAuth2 client-credentials auth for machines, the
@@ -26,6 +26,16 @@ uvicorn palestrix.main:app --reload --port 8000
 - OpenAPI spec: http://localhost:8000/api/v1/openapi.json
 - Demo login (development only): `rafaela@example.edu` / `palestrix-dev-only!`
 
+To run the full product (Phase 5, live feature surfaces), start the frontend
+in a second terminal — it consumes this API at `http://localhost:8000` by
+default (`NEXT_PUBLIC_PALESTRIX_API` overrides):
+
+```bash
+npm install && npm run dev        # repository root; http://localhost:3000
+```
+
+CORS allows `http://localhost:3000` out of the box (`PALESTRIX_CORS_ORIGINS`).
+
 Configuration comes from the environment or `.env` (see `.env.example`).
 SQLite is the dev default; set `PALESTRIX_DATABASE_URL` to PostgreSQL for a
 real deployment. Storage defaults to a local folder; set
@@ -37,7 +47,7 @@ real deployment. Storage defaults to a local folder; set
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
-36 tests cover registration/login, API-key scope limits and revocation,
+42 tests cover registration/login, API-key scope limits and revocation,
 OAuth2 client credentials, WebAuthn ceremony endpoints, the RBAC matrix over
 HTTP, course/enrollment ownership, the CTF flow (first blood, cooldown,
 duplicate solves, leaderboard), instance quotas and TTL extension spend, the
@@ -50,9 +60,12 @@ contract version gate, capability-scoped service principals, required/secret
 config with encryption at rest, the echo provider end to end, and crash
 isolation), and orchestration (SSE log stream replay, stop/destroy transitions,
 TTL reaper pass with quota release, provision failure retry policy, Docker
-adapter with recorded CLI, and Proxmox VE adapter with mocked API). Plugin
-tests load the installed `plugins/palestrix-provider-demo` package plus
-throwaway fixtures under `tests/fixtures/`.
+adapter with recorded CLI, and Proxmox VE adapter with mocked API), and the
+Phase 5 surface contract (per-caller `completed`/`solved` flags, writeup and
+course count enrichment, instance display enrichment, tenant usage, and the
+admin ISO/provider read endpoints with their RBAC gates). Plugin tests load
+the installed `plugins/palestrix-provider-demo` package plus throwaway
+fixtures under `tests/fixtures/`.
 
 ## Layout
 

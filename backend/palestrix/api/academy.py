@@ -28,9 +28,23 @@ def list_modules(
     path = db.scalar(select(Path).where(Path.slug == slug))
     if path is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such path")
-    return db.scalars(
+    modules = db.scalars(
         select(Module).where(Module.path_id == path.id).order_by(Module.position)
     ).all()
+    done_ids = set(
+        db.scalars(
+            select(ModuleCompletion.module_id).where(
+                ModuleCompletion.user_id == principal.user_id,
+                ModuleCompletion.module_id.in_([m.id for m in modules]),
+            )
+        ).all()
+    )
+    out = []
+    for module in modules:
+        row = schemas.ModuleOut.model_validate(module)
+        row.completed = module.id in done_ids
+        out.append(row)
+    return out
 
 
 @router.post("/modules/{module_id}/complete", status_code=201)

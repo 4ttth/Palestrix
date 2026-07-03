@@ -62,7 +62,9 @@ def create_challenge(
     return schemas.ChallengeOut.model_validate(challenge)
 
 
-def _challenge_out(db: Session, ch: Challenge) -> schemas.ChallengeOut:
+def _challenge_out(
+    db: Session, ch: Challenge, principal: Principal
+) -> schemas.ChallengeOut:
     solves = db.scalar(
         select(func.count(FlagSubmission.id)).where(
             FlagSubmission.challenge_id == ch.id, FlagSubmission.correct.is_(True)
@@ -76,9 +78,18 @@ def _challenge_out(db: Session, ch: Challenge) -> schemas.ChallengeOut:
     if fb_row:
         user = db.get(User, fb_row.user_id)
         handle = user.handle if user else None
+    solved = db.scalar(
+        select(FlagSubmission.id).where(
+            FlagSubmission.challenge_id == ch.id,
+            FlagSubmission.user_id == principal.user_id,
+            FlagSubmission.correct.is_(True),
+        )
+    )
     out = schemas.ChallengeOut.model_validate(ch)
     out.solves = solves
     out.first_blood = handle
+    out.first_blood_at = as_utc(fb_row.submitted_at) if fb_row else None
+    out.solved = solved is not None
     return out
 
 
@@ -89,7 +100,7 @@ def list_challenges(
     db: Session = Depends(get_db),
 ):
     rows = db.scalars(select(Challenge).where(Challenge.event_id == event_id)).all()
-    return [_challenge_out(db, ch) for ch in rows]
+    return [_challenge_out(db, ch, principal) for ch in rows]
 
 
 @router.post("/challenges/{challenge_id}/submit", response_model=schemas.FlagResultOut)

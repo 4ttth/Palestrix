@@ -1,12 +1,13 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import schemas
 from ..db import SessionLocal, get_db
 from ..events import dispatch_pending
-from ..models import Tenant, User
+from ..models import ACTIVE_STATES, Instance, LabTemplate, Tenant, User
 from ..orchestration.reaper import reap_expired, reconcile
+from ..providers import active_providers
 from ..rbac import Principal
 from ..storage import get_storage
 from .deps import require_capability
@@ -33,7 +34,17 @@ def list_tenants(
     principal: Principal = Depends(require_capability("infra:manage")),
     db: Session = Depends(get_db),
 ):
-    return db.scalars(select(Tenant)).all()
+    tenants = db.scalars(select(Tenant)).all()
+    out = []
+    for tenant in tenants:
+        row = schemas.TenantOut.model_validate(tenant)
+        row.instances_active = db.scalar(
+            select(func.count(Instance.id)).where(
+                Instance.tenant_id == tenant.id, Instance.state.in_(ACTIVE_STATES)
+            )
+        )
+        out.append(row)
+    return out
 
 
 @router.post("/tenants/{tenant_id}/assign/{handle}", response_model=schemas.UserOut)
@@ -67,6 +78,46 @@ def upload_iso(
     storage = get_storage()
     key = storage.put("isos", file.filename, file.file, file.size or 0)
     return {"stored": key}
+
+
+@router.get("/isos", response_model=list[schemas.StoredObjectOut])
+def list_isos(
+    principal: Principal = Depends(require_capability("infra:manage")),
+):
+    return [
+        schemas.StoredObjectOut(
+            key=obj.key, size=obj.size, last_modified=obj.last_modified
+        )
+        for obj in get_storage().list("isos")
+    ]
+
+
+@router.get("/providers", response_model=list[schemas.ProviderOut])
+def list_providers(
+    principal: Principal = Depends(require_capability("infra:manage")),
+    db: Session = Depends(get_db),
+):
+    """The active instance providers (core demo, Proxmox, Docker, or
+    plugin-owned kinds) with how many live instances each one carries — the
+    honest, adapter-level view the infrastructure console renders."""
+    out = []
+    for provider in active_providers():
+        count = db.scalar(
+            select(func.count(Instance.id))
+            .join(LabTemplate, LabTemplate.id == Instance.template_id)
+            .where(
+                LabTemplate.kind.in_(provider.kinds),
+                Instance.state.in_(ACTIVE_STATES),
+            )
+        )
+        out.append(
+            schemas.ProviderOut(
+                name=provider.name,
+                kinds=sorted(provider.kinds),
+                instances_active=count,
+            )
+        )
+    return out
 
 
 @router.post("/reaper/run")

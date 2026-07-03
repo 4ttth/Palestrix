@@ -8,6 +8,8 @@ One interface, two backends:
 Buckets are fixed: isos, lab-archives, writeups, sandbox-reports, backups.
 """
 
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
 from typing import BinaryIO, Protocol
@@ -17,10 +19,18 @@ from .config import get_settings
 BUCKETS = ("isos", "lab-archives", "writeups", "sandbox-reports", "backups")
 
 
+@dataclass
+class StoredObject:
+    key: str
+    size: int
+    last_modified: datetime | None = None
+
+
 class Storage(Protocol):
     def put(self, bucket: str, key: str, data: BinaryIO, size: int) -> str: ...
     def get(self, bucket: str, key: str) -> bytes: ...
     def exists(self, bucket: str, key: str) -> bool: ...
+    def list(self, bucket: str) -> list[StoredObject]: ...
 
 
 class LocalStorage:
@@ -47,6 +57,24 @@ class LocalStorage:
 
     def exists(self, bucket: str, key: str) -> bool:
         return self._path(bucket, key).exists()
+
+    def list(self, bucket: str) -> list[StoredObject]:
+        root = self._path(bucket, "")
+        out = []
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            stat = path.stat()
+            out.append(
+                StoredObject(
+                    key=path.relative_to(root).as_posix(),
+                    size=stat.st_size,
+                    last_modified=datetime.fromtimestamp(
+                        stat.st_mtime, tz=timezone.utc
+                    ),
+                )
+            )
+        return out
 
 
 class MinioStorage:
@@ -84,6 +112,16 @@ class MinioStorage:
             return True
         except S3Error:
             return False
+
+    def list(self, bucket: str) -> list[StoredObject]:
+        return [
+            StoredObject(
+                key=obj.object_name,
+                size=obj.size or 0,
+                last_modified=obj.last_modified,
+            )
+            for obj in self.client.list_objects(bucket, recursive=True)
+        ]
 
 
 @lru_cache
