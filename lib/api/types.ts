@@ -229,3 +229,79 @@ export type ProviderOut = {
   kinds: string[];
   instances_active: number;
 };
+
+// -- sandbox (Phase 6) -----------------------------------------------------------
+
+export type SandboxVerdict = "unknown" | "clean" | "suspicious" | "malicious";
+
+export type SandboxRunState =
+  | "queued"
+  | "static"
+  | "detonating"
+  | "completed"
+  | "failed";
+
+export type SandboxIocs = {
+  urls?: string[];
+  ips?: string[];
+  domains?: string[];
+};
+
+export type SandboxStatic = {
+  file_type?: string;
+  media_type?: string;
+  size?: number;
+  entropy?: number;
+  packed?: boolean;
+  is_eicar?: boolean;
+  strings_sample?: string[];
+  notes?: string[];
+};
+
+export type SandboxReportOut = {
+  id: string;
+  sample_sha256: string;
+  filename: string;
+  size: number;
+  media_type: string;
+  magic: string;
+  detonator: string;
+  state: SandboxRunState;
+  verdict: SandboxVerdict;
+  score: number;
+  family: string | null;
+  summary: string;
+  mitre: string[];
+  iocs: SandboxIocs;
+  static: SandboxStatic;
+  shared: boolean;
+  error: string | null;
+  created_at: string;
+  completed_at: string | null;
+  submitter_handle: string;
+  events: number;
+  resubmission: boolean;
+};
+
+export type SandboxEventOut = {
+  seq: number;
+  t: string;
+  category: "process" | "file" | "network" | "static" | "memory" | "system";
+  level: "info" | "ok" | "warn" | "alert";
+  msg: string;
+  data: Record<string, unknown>;
+};
+
+export type SandboxArtifactOut = {
+  key: string;
+  size: number;
+  last_modified: string | null;
+};
+
+export type SandboxStatusOut = {
+  enabled: boolean;
+  detonator: string;
+  live: boolean;
+  max_sample_mb: number;
+  wall_clock_seconds: number;
+};

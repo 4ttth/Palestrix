@@ -394,6 +394,110 @@ class FlagSubmission(Base):
 
 
 # --------------------------------------------------------------------------
+# Malware sandbox (Phase 6). A self-contained module: student-submitted
+# samples detonate on a dedicated, network-isolated host and stream their
+# file-system and network behavior back. Only these rows and the API contract
+# cross into the rest of the platform (docs/sandbox-security.md).
+# --------------------------------------------------------------------------
+
+
+class SandboxVerdict(str, enum.Enum):
+    unknown = "unknown"
+    clean = "clean"
+    suspicious = "suspicious"
+    malicious = "malicious"
+
+
+class SandboxRunState(str, enum.Enum):
+    queued = "queued"
+    static = "static"  # static pre-check; the sample has not executed
+    detonating = "detonating"  # dynamic analysis inside the isolated container
+    completed = "completed"
+    failed = "failed"
+
+
+# Runs that are still doing work; they hold the detonation slot.
+SANDBOX_LIVE_STATES = (
+    SandboxRunState.queued,
+    SandboxRunState.static,
+    SandboxRunState.detonating,
+)
+
+
+class SandboxSample(Base):
+    """A submitted artifact, keyed by SHA-256 so re-submissions dedup to the
+    same row (docs/sandbox-security.md, abuse: dropbox for classmates). The
+    bytes live in the ``sandbox-samples`` bucket, encrypted at rest; only the
+    metadata is relational."""
+
+    __tablename__ = "sandbox_samples"
+
+    sha256: Mapped[str] = mapped_column(String(64), primary_key=True)
+    filename: Mapped[str] = mapped_column(String(256))
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    media_type: Mapped[str] = mapped_column(String(128), default="application/octet-stream")
+    magic: Mapped[str] = mapped_column(String(64), default="")  # sniffed file type
+    storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SandboxRun(Base):
+    """One analysis of one sample. The report id is what the UI and the
+    ``sandbox.report.ready`` webhook reference. Reports are private to the
+    submitter unless ``shared`` opens them to the submitter's tenant."""
+
+    __tablename__ = "sandbox_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)  # sbx-XXXXXX
+    sample_sha256: Mapped[str] = mapped_column(
+        ForeignKey("sandbox_samples.sha256"), index=True
+    )
+    submitter_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    tenant_id: Mapped[str | None] = mapped_column(
+        ForeignKey("tenants.id"), nullable=True, index=True
+    )
+    detonator: Mapped[str] = mapped_column(String(32), default="")
+    state: Mapped[SandboxRunState] = mapped_column(
+        Enum(SandboxRunState), default=SandboxRunState.queued, index=True
+    )
+    verdict: Mapped[SandboxVerdict] = mapped_column(
+        Enum(SandboxVerdict), default=SandboxVerdict.unknown
+    )
+    score: Mapped[int] = mapped_column(Integer, default=0)  # 0-100 threat score
+    family: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    summary: Mapped[str] = mapped_column(Text, default="")  # SOC-handoff summary
+    mitre: Mapped[list] = mapped_column(JSON, default=list)  # ATT&CK technique ids
+    iocs: Mapped[dict] = mapped_column(JSON, default=dict)  # urls / ips / domains
+    static: Mapped[dict] = mapped_column(JSON, default=dict)  # pre-check findings
+    report_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    shared: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class SandboxEvent(Base):
+    """One behavior-trace line. ``category`` maps to a UI panel: ``process``
+    (the live process tree), ``file`` (file-system diff), ``network`` (the
+    fake-internet flows), ``static`` (pre-check findings), ``system`` (the
+    coordinator's own status). ``data`` carries the structured detail the
+    panel renders; ``msg`` is the human-readable line for the log view."""
+
+    __tablename__ = "sandbox_events"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    run_id: Mapped[str] = mapped_column(ForeignKey("sandbox_runs.id"), index=True)
+    seq: Mapped[int] = mapped_column(Integer, default=0)  # monotonic within a run
+    t: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    category: Mapped[str] = mapped_column(String(16), default="system")
+    level: Mapped[str] = mapped_column(String(8), default="info")  # info|ok|warn|alert
+    msg: Mapped[str] = mapped_column(Text)
+    data: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+# --------------------------------------------------------------------------
 # Plugins
 # --------------------------------------------------------------------------
 

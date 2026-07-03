@@ -69,6 +69,13 @@ async def lifespan(app: FastAPI):
     from .orchestration.reaper import start_reaper
 
     activate_configured_adapters()
+
+    # Phase 6: the sandbox coordinator detonator takes over when a dedicated
+    # detonation host is configured; otherwise the demo detonator answers.
+    from .sandbox import activate_configured_detonator
+
+    activate_configured_detonator()
+
     reaper = start_reaper()
     yield
     if reaper is not None:

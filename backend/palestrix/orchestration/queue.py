@@ -39,10 +39,15 @@ def job(name: str) -> Callable:
 
 
 def _ensure_handlers() -> None:
-    # Handlers live in jobs.py; imported lazily to avoid a cycle
-    # (jobs imports this module for the decorator).
-    if not _handlers:
-        from . import jobs  # noqa: F401
+    # Handlers live in jobs.py; imported lazily to avoid a cycle (jobs imports
+    # this module for the decorator). The sandbox module (Phase 6) registers
+    # its own handler the same way, so an RQ worker that only imports this
+    # queue still finds sandbox.detonate. Both imports are unconditional and
+    # idempotent (the module cache makes repeats cheap) — a guard on
+    # ``_handlers`` would miss orchestration's handlers whenever the sandbox
+    # handler was registered first at startup.
+    from . import jobs  # noqa: F401
+    from ..sandbox import jobs as _sandbox_jobs  # noqa: F401
 
 
 def run_job(name: str, kwargs: dict) -> None:

@@ -6,7 +6,7 @@ Students train on real ephemeral VMs and containers, earn and spend the
 Palestras currency, and compete in a CTF arena; teachers publish labs
 without touching infrastructure; admins run the range from one console.
 
-**Status: Phase 5 complete.** The repository contains the full frontend on
+**Status: Phase 6 complete.** The repository contains the full frontend on
 a locked design theme (Phase 1), the implementation documentation for both
 deployment use cases, the FastAPI core API (Phase 2): passkey auth, RBAC,
 the versioned `/api/v1` surface, API-key + OAuth2 client-credentials auth,
@@ -23,10 +23,16 @@ TTL reaper — and the live feature surfaces (Phase 5): every product screen
 wired to `/api/v1` through a typed client (`lib/api/`), real passkey
 ceremonies, session-guarded routing, launch/stop/extend/destroy with
 server-authoritative TTL countdowns, live flag submission, votes and
-writeups, teacher publishing, and the admin console. See
-[backend/README.md](backend/README.md) to run the API and
-[docs/plugin-development.md](docs/plugin-development.md) to write a
-plugin. Next: Phase 6 (malware sandbox module).
+writeups, teacher publishing, and the admin console — and the malware
+sandbox module (Phase 6): a self-contained detonation service behind a
+detonator abstraction (`backend/palestrix/sandbox/`), real static
+pre-analysis of every submission (magic-byte typing, Shannon entropy,
+string/IOC extraction, EICAR detection), a verdict with a MITRE ATT&CK
+mapping, a behavior-event timeline streamed over SSE, samples and reports
+sealed at rest, and admin-gated artifact export — with the live `/sandbox`
+surface wired to all of it. See [backend/README.md](backend/README.md) to
+run the API and [docs/plugin-development.md](docs/plugin-development.md) to
+write a plugin. Next: Phase 7 (multitenant layer + hardened deployments).
 
 ## Run it
 
@@ -151,7 +157,21 @@ real API on the same signature. Backend: display-enrichment fields +
 `GET /admin/isos` + `GET /admin/providers` (docs/public-api.md §Display
 enrichment). Full test suite: 42 tests pass.
 
-Phase 6: sandbox module. 
+Phase 6: sandbox module. **Done** — 11 tests in test_sandbox.py. The
+detonator abstraction (`backend/palestrix/sandbox/`) mirrors the Phase 4
+provider registry: the built-in demo detonator runs real static analysis
+and a clearly-labelled synthetic dynamic trace, and setting
+`PALESTRIX_SANDBOX_COORDINATOR_URL` swaps in the coordinator adapter that
+drives an isolated detonation host over its single permitted port. Static
+pre-check (magic bytes, entropy, strings, IOC extraction, EICAR) is real
+and never executes the sample; the verdict carries a threat score, family,
+MITRE ATT&CK ids, and an SOC-handoff summary. The behavior timeline streams
+over SSE on the same reader as the provisioning log; samples and report
+artifacts are sealed at rest so a host AV cannot quarantine them; reports
+are private to the submitter until shared with their tenant; raw samples are
+never served and artifact export is admin-only. The `/sandbox` surface is
+live end to end, and `sandbox.report.ready` fires on the webhook/event bus.
+Full test suite: 53 tests pass.
 
 Phase 7: multitenant layer + hardened deployments. 
 

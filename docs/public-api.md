@@ -111,6 +111,48 @@ DELETE /api/v1/instances/lab-3427
 -> 202 { "state": "stopped" }   (destroy follows asynchronously)
 ```
 
+## Sandbox surface (Phase 6)
+
+The malware sandbox is a self-contained module (docs/sandbox-security.md).
+Submissions detonate behind a detonator abstraction — the demo detonator in
+dev, an isolated-host coordinator in a deployment — and the same HTTP contract
+holds either way.
+
+```
+GET  /api/v1/sandbox/status              is the module enabled, and is a live
+                                         detonation host wired or the demo
+                                         detonator answering?
+POST /api/v1/sandbox/samples             multipart upload; returns a report in
+                                         `queued` (or already `completed` on the
+                                         inline queue). Cap: 100 MB.
+                                         Capability: sandbox:submit
+GET  /api/v1/sandbox/reports             own reports, plus reports a teammate
+                                         shared into your tenant. ?all_reports=
+                                         true is admin-only (sandbox:read-all)
+GET  /api/v1/sandbox/reports/{id}        verdict, threat score, family, static
+                                         pre-check, IOCs, MITRE ids, summary
+GET  /api/v1/sandbox/reports/{id}/events full behavior timeline (process, file,
+                                         network, memory, static, system)
+GET  /api/v1/sandbox/reports/{id}/events/stream    the same rows over SSE while
+                                         the run detonates; closes with a
+                                         `state` event (same reader as the
+                                         instance log stream)
+POST /api/v1/sandbox/reports/{id}/share  open/close the report to your tenant
+                                         (submitter only)
+GET  /api/v1/sandbox/reports/{id}/artifacts        archived report/capture/
+                                         dropped-file list
+GET  /api/v1/sandbox/reports/{id}/artifacts/download?key=
+                                         export one artifact; admin-only
+                                         (sandbox:export). Raw samples are never
+                                         served; artifacts are sealed at rest
+```
+
+A report is private to its submitter until shared with the tenant; `verdict`
+is one of `unknown|clean|suspicious|malicious`; `state` moves
+`queued -> static -> detonating -> completed` (or `failed`). Completion fires
+`sandbox.report.ready` on the event bus (below). When the module is disabled
+the whole surface answers `501`.
+
 ## Webhooks
 
 Subscriptions are per-account, scoped, and signed (HMAC-SHA256 over the body

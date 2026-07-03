@@ -1,0 +1,218 @@
+"""Phase 6 malware sandbox: submission and verdict, report visibility and
+team sharing, the behavior timeline and its SSE stream, the real static
+pre-check's branches (EICAR / packed / clean), and export gating. The demo
+detonator runs inline, so a submission returns already analyzed."""
+
+import json
+
+# EICAR anti-malware test string, split so this test file is not itself
+# flagged by scanners. Reassembled at submit time.
+EICAR = (
+    "X5O!P%@AP[4\\PZX54(P^)7CC)7}$"
+    + "EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+)
+
+
+def _submit(client, headers, name, data: bytes):
+    return client.post(
+        "/api/v1/sandbox/samples",
+        files={"file": (name, data)},
+        headers=headers,
+    )
+
+
+def test_status_reports_demo_detonator(client, student):
+    status = client.get("/api/v1/sandbox/status", headers=student).json()
+    assert status["enabled"] is True
+    assert status["detonator"] == "demo"
+    assert status["live"] is False  # no isolated host in dev/test
+    assert status["max_sample_mb"] == 100
+
+
+def test_submit_eicar_reaches_malicious_verdict(client, student):
+    resp = _submit(client, student, "eicar.com.txt", EICAR.encode())
+    assert resp.status_code == 201, resp.text
+    report = resp.json()
+    # Inline queue: analysis is finished by the time we get the response.
+    assert report["state"] == "completed"
+    assert report["verdict"] == "malicious"
+    assert report["family"] == "EICAR-Test-File"
+    assert report["score"] == 100
+    assert report["static"]["is_eicar"] is True
+    assert "T1204.002" in report["mitre"]
+    assert report["events"] > 0
+    assert report["detonator"] == "demo"
+    assert report["submitter_handle"] == "stud1"
+
+
+def test_clean_verdict_for_benign_text(client, student):
+    resp = _submit(
+        client, student, "notes.txt", b"a benign note about blue team triage\n"
+    )
+    report = resp.json()
+    assert report["state"] == "completed"
+    assert report["verdict"] == "clean"
+    assert report["static"]["is_eicar"] is False
+    assert report["static"]["packed"] is False
+
+
+def test_packed_payload_flags_suspicious(client, student):
+    # Uniform bytes: entropy 8.0 bits/byte, over the packed threshold.
+    payload = bytes(range(256)) * 16
+    report = _submit(client, student, "packed.bin", payload).json()
+    assert report["verdict"] == "suspicious"
+    assert report["static"]["packed"] is True
+    assert any("packed" in n or "entropy" in n for n in report["static"]["notes"])
+    assert "T1027.002" in report["mitre"]
+
+
+def test_embedded_iocs_are_extracted(client, student):
+    sample = b"beacon config: http://evil.example.test/gate.php c2=185.220.101.5\n"
+    report = _submit(client, student, "config.txt", sample).json()
+    iocs = report["iocs"]
+    assert "http://evil.example.test/gate.php" in iocs["urls"]
+    assert "185.220.101.5" in iocs["ips"]
+    assert "evil.example.test" in iocs["domains"]
+
+
+def test_empty_submission_is_rejected(client, student):
+    resp = _submit(client, student, "empty.bin", b"")
+    assert resp.status_code == 422
+
+
+def test_report_visibility_is_private_by_default(client, student, student2, admin):
+    report = _submit(client, student, "eicar.com.txt", EICAR.encode()).json()
+    rid = report["id"]
+
+    # Owner sees it; a teammate does not (private by default); admin does.
+    assert client.get(f"/api/v1/sandbox/reports/{rid}", headers=student).status_code == 200
+    assert client.get(f"/api/v1/sandbox/reports/{rid}", headers=student2).status_code == 403
+    assert client.get(f"/api/v1/sandbox/reports/{rid}", headers=admin).status_code == 200
+
+    # The list endpoint is scoped the same way.
+    mine = [r["id"] for r in client.get("/api/v1/sandbox/reports", headers=student).json()]
+    assert rid in mine
+    theirs = [r["id"] for r in client.get("/api/v1/sandbox/reports", headers=student2).json()]
+    assert rid not in theirs
+
+    # all_reports is admin-only.
+    assert (
+        client.get("/api/v1/sandbox/reports?all_reports=true", headers=student).status_code
+        == 403
+    )
+    all_ids = [
+        r["id"]
+        for r in client.get(
+            "/api/v1/sandbox/reports?all_reports=true", headers=admin
+        ).json()
+    ]
+    assert rid in all_ids
+
+
+def test_sharing_opens_report_to_team(client, student, student2):
+    report = _submit(client, student, "sample.bin", b"share me\n").json()
+    rid = report["id"]
+
+    # A teammate cannot share someone else's report.
+    assert (
+        client.post(
+            f"/api/v1/sandbox/reports/{rid}/share",
+            json={"shared": True},
+            headers=student2,
+        ).status_code
+        == 403
+    )
+
+    shared = client.post(
+        f"/api/v1/sandbox/reports/{rid}/share", json={"shared": True}, headers=student
+    ).json()
+    assert shared["shared"] is True
+
+    # Now the teammate (same tenant) can see it, in the list and directly.
+    assert client.get(f"/api/v1/sandbox/reports/{rid}", headers=student2).status_code == 200
+    theirs = [r["id"] for r in client.get("/api/v1/sandbox/reports", headers=student2).json()]
+    assert rid in theirs
+
+    # Closing sharing hides it again.
+    client.post(
+        f"/api/v1/sandbox/reports/{rid}/share", json={"shared": False}, headers=student
+    )
+    assert client.get(f"/api/v1/sandbox/reports/{rid}", headers=student2).status_code == 403
+
+
+def test_event_timeline_and_sse_stream(client, student):
+    report = _submit(client, student, "eicar.com.txt", EICAR.encode()).json()
+    rid = report["id"]
+
+    events = client.get(f"/api/v1/sandbox/reports/{rid}/events", headers=student).json()
+    assert len(events) > 0
+    assert [e["seq"] for e in events] == sorted(e["seq"] for e in events)
+    assert events[0]["category"] == "system"
+    assert any(e["category"] == "static" for e in events)  # pre-check findings
+    assert any("verdict" in e["msg"] for e in events)  # completion line
+
+    # The SSE stream replays the same rows and closes with the settled state.
+    streamed, final_state = [], None
+    with client.stream(
+        "GET", f"/api/v1/sandbox/reports/{rid}/events/stream", headers=student
+    ) as resp:
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+        lines = list(resp.iter_lines())
+    for i, line in enumerate(lines):
+        if line.startswith("data: ") and (i == 0 or not lines[i - 1].startswith("event:")):
+            streamed.append(json.loads(line[len("data: "):]))
+        if line.startswith("event: state"):
+            final_state = lines[i + 1][len("data: "):]
+    assert len(streamed) == len(events)
+    assert final_state == "completed"
+
+    # Streams are visibility-gated exactly like the report.
+    other = client.post(
+        "/api/v1/auth/login",
+        json={"email": "stud2@example.edu", "password": "test-password-123!"},
+    ).json()["access_token"]
+    denied = client.get(
+        f"/api/v1/sandbox/reports/{rid}/events/stream",
+        headers={"Authorization": f"Bearer {other}"},
+    )
+    assert denied.status_code == 403
+
+
+def test_artifacts_listed_and_export_is_admin_only(client, student, teacher, admin):
+    report = _submit(client, student, "eicar.com.txt", EICAR.encode()).json()
+    rid = report["id"]
+
+    artifacts = client.get(
+        f"/api/v1/sandbox/reports/{rid}/artifacts", headers=student
+    ).json()
+    keys = [a["key"] for a in artifacts]
+    assert f"{rid}/report.json" in keys
+
+    # Students and teachers cannot export raw artifacts out of the platform.
+    dl_path = f"/api/v1/sandbox/reports/{rid}/artifacts/download?key={rid}/report.json"
+    assert client.get(dl_path, headers=student).status_code == 403
+    assert client.get(dl_path, headers=teacher).status_code == 403
+
+    # Admins can; the payload is the archived analysis JSON.
+    ok = client.get(dl_path, headers=admin)
+    assert ok.status_code == 200
+    body = json.loads(ok.content)
+    assert body["verdict"] == "malicious" and body["sha256"] == report["sample_sha256"]
+
+    # Path traversal out of the report's own prefix is refused.
+    bad = client.get(
+        f"/api/v1/sandbox/reports/{rid}/artifacts/download?key=../isos/secret",
+        headers=admin,
+    )
+    assert bad.status_code == 400
+
+
+def test_resubmission_is_flagged(client, student, student2):
+    payload = b"the very same bytes\n"
+    first = _submit(client, student, "dup.bin", payload).json()
+    assert first["resubmission"] is False
+    second = _submit(client, student2, "dup.bin", payload).json()
+    # Same SHA-256, a later run: the second submission is flagged.
+    assert second["sample_sha256"] == first["sample_sha256"]
+    assert second["resubmission"] is True

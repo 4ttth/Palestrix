@@ -104,4 +104,9 @@ fixtures under `tests/fixtures/`.
   sinks (TTL extensions), per-source daily caps, the student-only earn path,
   community-score decay, and the leaderboards all live there. Every other
   service posts a request to it with a reason code.
-- `/sandbox` endpoints are reserved (501) until the Phase 6 module.
+- The **malware sandbox** module is live in `palestrix/sandbox/` (Phase 6):
+  a detonator abstraction (demo detonator with real static pre-check +
+  simulated dynamic trace; coordinator adapter for an isolated host), the
+  `/sandbox` API, a behavior-event SSE stream, and samples/reports sealed at
+  rest. Set `PALESTRIX_SANDBOX_COORDINATOR_URL` to attach a live detonation
+  host; leave it unset for the demo detonator. See docs/sandbox-security.md.

@@ -18,6 +18,7 @@ from .db import Base, engine
 from . import models  # noqa: F401  (register all tables on Base.metadata)
 from .orchestration import activate_configured_adapters
 from .orchestration.reaper import start_reaper
+from .sandbox import activate_configured_detonator
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 logger = logging.getLogger("palestrix.worker")
@@ -39,6 +40,7 @@ def main() -> int:
 
     Base.metadata.create_all(bind=engine)
     activate_configured_adapters()
+    activate_configured_detonator()
     reaper = start_reaper()
     logger.info(
         "worker up: queue=palestrix redis=%s reaper=%s",

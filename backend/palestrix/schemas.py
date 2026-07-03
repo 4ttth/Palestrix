@@ -5,7 +5,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from .models import InstanceState, Role
+from .models import InstanceState, Role, SandboxRunState, SandboxVerdict
 
 
 class ORMModel(BaseModel):
@@ -337,6 +337,65 @@ class LeaderboardRowOut(BaseModel):
     handle: str
     score: int
     first_bloods: int
+
+
+# -- sandbox ---------------------------------------------------------------------------
+
+
+class SandboxReportOut(ORMModel):
+    id: str
+    sample_sha256: str
+    filename: str = ""  # from the sample row (enrichment)
+    size: int = 0
+    media_type: str = ""
+    magic: str = ""
+    detonator: str
+    state: SandboxRunState
+    verdict: SandboxVerdict
+    score: int
+    family: str | None
+    summary: str
+    mitre: list[str] = []
+    iocs: dict = {}
+    static: dict = {}
+    shared: bool
+    error: str | None = None
+    created_at: datetime
+    completed_at: datetime | None
+    # Enrichment so the list view needs no follow-up requests.
+    submitter_handle: str = ""
+    events: int = 0
+    resubmission: bool = False  # this exact SHA-256 was analyzed before
+
+
+class SandboxEventOut(ORMModel):
+    seq: int
+    t: datetime
+    category: str
+    level: str
+    msg: str
+    data: dict = {}
+
+
+class SandboxArtifactOut(BaseModel):
+    key: str
+    size: int
+    last_modified: datetime | None = None
+
+
+class SandboxShareIn(BaseModel):
+    shared: bool
+
+
+class SandboxStatusOut(BaseModel):
+    """What the /sandbox surface renders instead of guessing from a 501: is a
+    live detonation host wired, or is the demo detonator answering?"""
+
+    enabled: bool
+    detonator: str
+    live: bool  # True only when a real isolated host is configured
+    max_sample_mb: int
+    wall_clock_seconds: int
 
 
 # -- admin ----------------------------------------------------------------------------

@@ -81,6 +81,22 @@ class Settings(BaseSettings):
     docker_cpu_limit: str = "1.0"
     docker_network_prefix: str = "net-"  # tenant network: net-<tenant_id>
 
+    # Malware sandbox (Phase 6). The demo detonator runs real static analysis
+    # on the submitted bytes and a clearly-labelled synthetic behavior trace —
+    # it never executes a sample, so it is safe in dev/test. A deployment sets
+    # sandbox_coordinator_url to the isolated detonation host (a single TCP
+    # port, per the VLAN ACL in docs/sandbox-security.md); the coordinator
+    # detonator then takes over and the demo one steps aside.
+    sandbox_enabled: bool = True  # the module answers instead of 501
+    sandbox_max_sample_mb: int = 100
+    sandbox_wall_clock_seconds: int = 300  # hard kill (doc default: 5 min)
+    sandbox_coordinator_url: str = ""  # e.g. https://sandbox-01.internal:8443
+    sandbox_coordinator_token: str = ""
+    sandbox_coordinator_verify_tls: bool = True
+    sandbox_coordinator_timeout_seconds: float = 360.0
+    # Static pre-check heuristics: a high-entropy payload reads as packed.
+    sandbox_entropy_packed_threshold: float = 7.2
+
     # Gamification (Phase 3) — the balance rules the service enforces. All
     # earning is student-only (rbac-matrix.md); staff have no earn path.
     #

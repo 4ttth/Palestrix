@@ -222,6 +222,24 @@ def seed() -> None:
                     )
                 )
 
+        # A finished sandbox analysis so the /sandbox surface renders real data
+        # immediately. The sample is the EICAR test file — the harmless,
+        # industry-standard anti-malware test artifact, not real malware — so
+        # the demo detonator reaches a definitive verdict with zero risk.
+        from .models import SandboxRun
+        from .sandbox import submit_run
+        from .sandbox.analysis import EICAR
+
+        if db.scalar(select(SandboxRun)) is None:
+            submit_run(
+                db,
+                submitter_id=users["rafalmz"].id,
+                tenant_id="hau-bscs-3a",
+                filename="eicar.com.txt",
+                data=EICAR.encode(),
+                media_type="text/plain",
+            )
+
         db.commit()
         print("Seed complete. Demo login: rafaela@example.edu / " + PASSWORD)
     finally:

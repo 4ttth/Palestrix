@@ -130,7 +130,12 @@ Both are documented in usecase-a-baremetal.md; pick one per site.
 A self-contained module on a dedicated, network-isolated Docker host.
 Submissions detonate in instrumented containers; file-system and network
 events stream back to the UI. It shares only the API contract with the rest
-of the platform. Hardening spec in sandbox-security.md.
+of the platform. Hardening spec in sandbox-security.md. Implemented in Phase 6
+(`backend/palestrix/sandbox/`): a detonator abstraction with a built-in demo
+detonator (real static pre-check, simulated dynamic trace) and a coordinator
+adapter for the isolated host; verdict + MITRE mapping; an SSE behavior-event
+stream; samples and reports sealed at rest. See sandbox-security.md
+§Implementation status and public-api.md §Sandbox surface.
 
 ### Storage
 

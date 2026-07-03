@@ -27,7 +27,9 @@ CAPABILITIES: dict[str, set[Role]] = {
     "compete:submit": {Role.student},
     "compete:author": {Role.teacher, Role.admin, Role.superadmin},
     "compete:adjust": {Role.admin, Role.superadmin},
+    "sandbox:submit": {Role.student, Role.teacher, Role.admin, Role.superadmin},
     "sandbox:read-all": {Role.admin, Role.superadmin},
+    "sandbox:export": {Role.admin, Role.superadmin},
     "infra:manage": {Role.admin, Role.superadmin},
     "users:manage": {Role.admin, Role.superadmin},
     "plugins:manage": {Role.superadmin},
@@ -45,6 +47,8 @@ SCOPE_CAPABILITY: dict[str, str | None] = {
     "flags:submit": "compete:submit",
     "ledger:read": None,
     "community:write": None,
+    "sandbox:submit": "sandbox:submit",
+    "sandbox:read": None,
     "webhooks:manage": "webhooks:manage",
     "admin:infra": "infra:manage",
 }

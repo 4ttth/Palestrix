@@ -5,7 +5,9 @@ One interface, two backends:
 - MinioStorage: MinIO or any S3-compatible endpoint (production; see
   docs/usecase-a-baremetal.md and usecase-b-cloud-aws.md).
 
-Buckets are fixed: isos, lab-archives, writeups, sandbox-reports, backups.
+Buckets are fixed: isos, lab-archives, writeups, sandbox-samples,
+sandbox-reports, backups. The sandbox module is scoped to its own two
+buckets only (docs/sandbox-security.md §What the sandbox module never gets).
 """
 
 from dataclasses import dataclass
@@ -16,7 +18,14 @@ from typing import BinaryIO, Protocol
 
 from .config import get_settings
 
-BUCKETS = ("isos", "lab-archives", "writeups", "sandbox-reports", "backups")
+BUCKETS = (
+    "isos",
+    "lab-archives",
+    "writeups",
+    "sandbox-samples",
+    "sandbox-reports",
+    "backups",
+)
 
 
 @dataclass
