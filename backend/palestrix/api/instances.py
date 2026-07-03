@@ -81,20 +81,40 @@ def launch(
             status.HTTP_409_CONFLICT, "account has no tenant; ask an administrator"
         )
     tenant = db.get(Tenant, principal.tenant_id)
-    active = db.scalar(
-        select(func.count(Instance.id)).where(
-            Instance.tenant_id == tenant.id, Instance.state.in_(ACTIVE_STATES)
-        )
-    )
-    if active >= tenant.instance_quota:
+    if tenant is None or tenant.archived:
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            detail={
-                "error": "quota_exceeded",
-                "quota": "instances",
-                "limit": tenant.instance_quota,
-            },
+            "tenant is archived; ask an administrator",
         )
+    # All three tenant quotas, checked in the documented order — instances,
+    # vCPU, RAM — and the denial names exactly the quota that blocked
+    # (docs/ephemeral-lifecycle.md §Walkthrough 1). Resource use is the sum
+    # of each active instance's template spec.
+    active, cpu_active, ram_active = db.execute(
+        select(
+            func.count(Instance.id),
+            func.coalesce(func.sum(LabTemplate.cpu), 0),
+            func.coalesce(func.sum(LabTemplate.ram_gb), 0),
+        )
+        .join(LabTemplate, LabTemplate.id == Instance.template_id)
+        .where(Instance.tenant_id == tenant.id, Instance.state.in_(ACTIVE_STATES))
+    ).one()
+    for quota, used, requested, limit in (
+        ("instances", active, 1, tenant.instance_quota),
+        ("cpu", cpu_active, template.cpu, tenant.cpu_cap),
+        ("ram", ram_active, template.ram_gb, tenant.ram_cap_gb),
+    ):
+        if used + requested > limit:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail={
+                    "error": "quota_exceeded",
+                    "quota": quota,
+                    "limit": limit,
+                    "used": used,
+                    "requested": requested,
+                },
+            )
 
     ttl = min(
         body.ttl_minutes or template.ttl_minutes_default, template.ttl_minutes_max

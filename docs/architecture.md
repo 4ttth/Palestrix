@@ -125,6 +125,39 @@ quotas, self-service within limits) the deployment fronts it with either
 OpenNebula (VDCs and groups) or Apache CloudStack (domains and accounts).
 Both are documented in usecase-a-baremetal.md; pick one per site.
 
+Implemented in Phase 7 (`backend/palestrix/tenancy/`) behind a `TenantCloud`
+contract that mirrors the Phase 4 provider and Phase 6 detonator registries:
+`ensure_tenant` on create, `sync_quota` on quota edits, `retire_tenant` on
+archive — all idempotent, all called only by the admin API. The built-in
+`LocalCloud` does registry-side allocation (a VLAN tag from
+`PALESTRIX_TENANT_VLAN_MIN..MAX`, a /24 carved from
+`PALESTRIX_TENANT_CIDR_POOL`), which the Phase 4 adapters turn into real
+isolation: Proxmox tags `net0` with the tenant VLAN on the trunk bridge,
+Docker pins the tenant bridge to the tenant CIDR. Setting
+`PALESTRIX_CLOUD_BACKEND=opennebula|cloudstack` swaps in an adapter that
+additionally materializes each tenant in that manager — group + VDC +
+VLAN-backed virtual network, or domain + account + isolated network — and
+pushes quota edits through. The API enforces all three tenant quotas
+(instances, vCPU, RAM) at launch either way; archived tenants keep their
+row, VLAN, and CIDR forever (ephemeral-lifecycle.md §Multitenancy
+invariants).
+
+### Deployment hardening
+
+`backend/palestrix/hardening.py` is the part of the runbooks the app
+verifies itself. `production_readiness()` reports every configuration that
+must not survive into production — the dev secret, SQLite, a plain-HTTP
+origin, wildcard or plaintext CORS origins, TLS verification switched off
+on any adapter, the inline queue, a disabled reaper, local-folder storage —
+and `PALESTRIX_ENVIRONMENT=production` arms the boot guard: the API refuses
+to start while any finding stands, so a misconfigured deployment dies
+loudly at boot instead of serving traffic. Every response carries baseline
+security headers (nosniff, frame-deny, no-referrer, a Permissions-Policy;
+HSTS in production only) without relying on the edge proxy. Additive schema
+upgrades for databases seeded by earlier phases run at startup in both the
+API and the worker (`palestrix/migrations.py`); anything beyond ADD COLUMN
+ships with real Alembic migrations when the need first arises.
+
 ### Malware sandbox module
 
 A self-contained module on a dedicated, network-isolated Docker host.

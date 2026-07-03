@@ -53,7 +53,8 @@ CourseOut.assignments          assignment count
 AssignmentOut.submissions      submission count (and .graded)
 InstanceOut.kind / access_mode / template_slug / template_title /
             owner_handle      registry rows render without follow-up requests
-TenantOut.instances_active     live usage against instance_quota
+TenantOut.instances_active / cpu_active / ram_active_gb
+                              live usage against all three tenant quotas
 ```
 
 Two admin read endpoints (both `infra:manage`) complete the infrastructure
@@ -64,6 +65,41 @@ GET /api/v1/admin/isos        objects in the isos bucket (key, size, mtime)
 GET /api/v1/admin/providers   active instance providers, their kinds, and
                               how many live instances each carries
 ```
+
+## Tenant lifecycle (Phase 7)
+
+Tenants are the isolation unit (ephemeral-lifecycle.md §Multitenancy
+invariants). Creating one materializes it through the active cloud layer
+(`backend/palestrix/tenancy/`): the local backend allocates the VLAN tag and
+tenant CIDR in the registry; the OpenNebula and CloudStack adapters
+additionally create the group/VDC/network or domain/account/network and push
+the quotas. All endpoints require `infra:manage`.
+
+```
+POST   /api/v1/admin/tenants             create + materialize. Body: id (slug),
+                                         name, instance_quota, cpu_cap,
+                                         ram_cap_gb, network_cidr (blank: a /24
+                                         is carved from the pool; given: pinned)
+GET    /api/v1/admin/tenants             all tenants (archived included — history
+                                         references them) with live usage
+PATCH  /api/v1/admin/tenants/{id}        edit name/quotas; pushed through the
+                                         cloud layer. VLAN and CIDR are fixed at
+                                         creation and cannot be patched
+DELETE /api/v1/admin/tenants/{id}        archive, not delete: refused with 409
+                                         while the tenant holds active instances;
+                                         afterwards its members cannot launch and
+                                         its VLAN/CIDR stay reserved forever
+POST   /api/v1/admin/tenants/{id}/assign/{handle}   move a user into the tenant
+GET    /api/v1/admin/cloud               the active cloud layer (local |
+                                         opennebula | cloudstack) and tenant counts
+```
+
+`POST /api/v1/admin/isos` stores the ISO in object storage and — while the
+Proxmox adapter owns the "vm" kind — forwards it to the cluster's ISO storage
+(`PALESTRIX_PROXMOX_ISO_STORAGE`), returning
+`{ "stored": "isos/kali.iso", "forwarded_to": "local:iso/kali.iso" }`; a
+forwarding failure keeps the object-storage copy and reports `forward_error`
+instead of failing the upload.
 
 ## Gamification surface
 
@@ -93,7 +129,11 @@ recency-decayed community score) are documented in rbac-matrix.md.
 POST /api/v1/instances
 { "template_id": "log-triage:1.4", "ttl_minutes": 90 }
 -> 201 { "id": "lab-3427", "state": "requested", ... }
--> 409 { "error": "quota_exceeded", "quota": "instances", "limit": 3 }
+-> 409 { "error": "quota_exceeded", "quota": "cpu",
+         "limit": 3, "used": 2, "requested": 2 }
+   (quota names whichever of instances | cpu | ram blocked, checked in that
+    order; used/requested are in that quota's unit — count, vCPU, or GB.
+    Templates declare their spec at publish time: cpu, ram_gb)
 
 GET  /api/v1/instances/lab-3427
 -> { "state": "running", "access": { "mode": "no-gui",

@@ -77,6 +77,18 @@ Both options sit on top of the same Proxmox/KVM base and give you tenants,
 quotas, and self-service inside limits. Document your choice in the site
 runbook; do not run both.
 
+PalestrIX drives this layer itself (Phase 7, `backend/palestrix/tenancy/`):
+creating a tenant in the admin console materializes it end to end, editing
+quotas pushes them through, and archiving tears the manager objects down.
+Select the backend with `PALESTRIX_CLOUD_BACKEND=local|opennebula|cloudstack`.
+The smallest deployment (one Proxmox node, a handful of sections) skips the
+manager entirely and runs `local`: the registry allocates the VLAN tag
+(`PALESTRIX_TENANT_VLAN_MIN..MAX`, default 100-1999) and a /24 per tenant
+from `PALESTRIX_TENANT_CIDR_POOL` (default 10.24.0.0/16), the Proxmox
+adapter tags every instance's `net0` with the tenant VLAN on the trunk
+bridge, and the API enforces the quotas at launch. The switch ports feeding
+`PALESTRIX_PROXMOX_BRIDGE` must trunk the tenant VLAN range.
+
 ### Option 1: OpenNebula
 
 - Install the OpenNebula front-end (`opennebula`, `opennebula-sunstone`) on a
@@ -88,7 +100,14 @@ runbook; do not run both.
 - Networking: one VXLAN or VLAN-backed virtual network per tenant with
   address ranges matching PalestrIX tenant CIDRs (for example 10.24.7.0/24
   for `hau-bscs-3a`).
-- PalestrIX talks to the XML-RPC/REST API with a service account.
+- PalestrIX talks to the XML-RPC API with a service account:
+  `PALESTRIX_OPENNEBULA_ENDPOINT` (for example
+  `http://one.internal:2633/RPC2`), `_USERNAME`, `_PASSWORD`, and
+  `_PHYDEV` (the trunk device carrying the 802.1Q tags, default `bond0`).
+  Per tenant it creates the group `palestrix-<tenant>`, a VLAN-backed
+  virtual network `net-<tenant>` with an address range from the tenant
+  CIDR, and the VDC `vdc-<tenant>`, then sets the group quota (VMS, CPU,
+  MEMORY). All idempotent by name — re-running converges.
 
 ### Option 2: Apache CloudStack
 
@@ -99,7 +118,15 @@ runbook; do not run both.
 - Quotas: resource limits per domain/account (instances, CPU, RAM, volumes)
   map to PalestrIX tenant quotas.
 - Networking: isolated guest networks with security groups per tenant.
-- PalestrIX talks to the CloudStack REST API with an API/secret key pair.
+- PalestrIX talks to the CloudStack REST API with an API/secret key pair
+  (every request HMAC-SHA1 signed): `PALESTRIX_CLOUDSTACK_ENDPOINT`
+  (for example `https://cs.internal:8080/client/api`), `_API_KEY`,
+  `_SECRET_KEY`, `_ZONE_ID`, and `_NETWORK_OFFERING_ID`. Per tenant it
+  creates the domain `palestrix-<tenant>` with a `palestrix` account, sets
+  the domain resource limits (instances, CPU, memory), and creates the
+  isolated network `net-<tenant>` gatewayed on the tenant CIDR. Archiving
+  issues `deleteDomain` with cleanup. Keep `_VERIFY_TLS` on — the boot
+  guard flags it off in production.
 
 ## Layer 3: Platform services
 
@@ -165,17 +192,32 @@ The reaper is a beat-scheduled worker (every 60 s):
 
 ## Hardening checklist
 
+The first item is enforced by the application itself: set
+`PALESTRIX_ENVIRONMENT=production` and the API refuses to boot while any
+`production_readiness()` finding stands (dev secret, SQLite, plain-HTTP
+origin, wildcard CORS, TLS verification off on Proxmox/CloudStack/sandbox,
+inline queue, disabled reaper, local-folder storage). Everything else is
+site infrastructure the app cannot see.
+
+- [ ] `PALESTRIX_ENVIRONMENT=production` on the API and worker units; a unit
+      that fails to start means a finding to fix, never a check to skip.
 - [ ] Proxmox web UI (8006) and SSH reachable only from the management VLAN.
 - [ ] API tokens with least privilege; no root@pam anywhere in config.
+- [ ] `PALESTRIX_PROXMOX_VERIFY_TLS=true` with a real certificate on the
+      cluster (the guard refuses `false` in production).
 - [ ] Tenant networks deny east-west traffic to other tenants and to the
-      management network (default-deny, explicit allows).
+      management network (default-deny, explicit allows). The tenant VLAN
+      range is trunked to the hypervisors only — never to the edge host.
 - [ ] Sandbox host on its own VLAN with no route to tenants or management
       (see sandbox-security.md).
 - [ ] fail2ban or CrowdSec on the edge host.
 - [ ] Automatic security updates on all hosts; Proxmox updates in a monthly
       maintenance window.
-- [ ] Secrets in an env file readable only by the service user (Phase 7
-      moves them to Vault or sops).
+- [ ] Secrets in sops or Vault, rendered to an env file readable only by the
+      service user; `PALESTRIX_SECRET_KEY` unique per site, 32+ characters.
+- [ ] The edge proxy repeats the security headers the API already sets
+      (nosniff, frame-deny, no-referrer, HSTS) — belt and suspenders; the
+      API does not rely on the proxy for them.
 
 ## Acceptance test (run before calling the deployment done)
 
@@ -188,3 +230,10 @@ The reaper is a beat-scheduled worker (every 60 s):
 5. Submit a CTF flag; watch the leaderboard and Palestras balance update.
 6. Confirm the sandbox host cannot reach any tenant network (nmap from a
    detonation container).
+7. Create a tenant in the admin console; verify its VLAN and network appear
+   in the cloud layer (or the registry on `local`), that a launch beyond its
+   vCPU cap is refused naming the quota, and that archiving is refused while
+   an instance runs.
+8. Restart the API with `PALESTRIX_ENVIRONMENT=production` and one check
+   deliberately broken (for example the dev secret); the unit must refuse to
+   start and name the finding.

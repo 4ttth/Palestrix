@@ -45,9 +45,21 @@ in the repository for the full guide, scopes, and webhook catalog.
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Phase 2 contract: schema is created at startup. Alembic migrations
-    # take over the first time a deployed schema needs to change.
+    # Phase 7 boot guard: in production the app refuses to start on a
+    # configuration that fails the hardening checks; in development the
+    # findings are logged and startup continues.
+    from .hardening import enforce_readiness
+
+    enforce_readiness(get_settings())
+
+    # Phase 2 contract: schema is created at startup; Phase 7 adds the
+    # additive column upgrades for databases seeded by earlier phases
+    # (palestrix/migrations.py). Anything beyond ADD COLUMN ships with real
+    # Alembic migrations when the need first arises.
     Base.metadata.create_all(bind=engine)
+    from .migrations import upgrade
+
+    upgrade(engine)
 
     # Phase 2b: discover plugins (entry points + PALESTRIX_PLUGIN_PATHS)
     # and re-activate the ones the database says are enabled.
@@ -76,6 +88,13 @@ async def lifespan(app: FastAPI):
 
     activate_configured_detonator()
 
+    # Phase 7: the multitenant cloud layer. LocalCloud (registry-only VLAN +
+    # CIDR allocation) answers unless PALESTRIX_CLOUD_BACKEND swaps in the
+    # OpenNebula or CloudStack adapter.
+    from .tenancy import activate_configured_cloud
+
+    activate_configured_cloud()
+
     reaper = start_reaper()
     yield
     if reaper is not None:
@@ -99,6 +118,13 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+    )
+    # Phase 7: baseline security headers on every response (the edge proxy
+    # sets them too; the API does not rely on it).
+    from .hardening import SecurityHeadersMiddleware
+
+    app.add_middleware(
+        SecurityHeadersMiddleware, production=settings.environment == "production"
     )
 
     api = APIRouter(prefix=API_PREFIX)

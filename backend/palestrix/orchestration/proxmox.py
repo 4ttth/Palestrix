@@ -44,6 +44,7 @@ class ProxmoxProvider:
         settings = get_settings()
         self._node = settings.proxmox_node
         self._bridge = settings.proxmox_bridge
+        self._iso_storage = settings.proxmox_iso_storage
         self._console_host = urlparse(settings.proxmox_host).hostname or ""
         self._timeout = settings.proxmox_timeout_seconds
         self._poll = poll_seconds
@@ -147,8 +148,23 @@ class ProxmoxProvider:
         )
         self._wait_task(upid)
 
-        self._post(f"/nodes/{self._node}/qemu/{vmid}/config", net0=f"virtio,bridge={self._bridge}")
-        add_log(db, instance.id, f"network: attached to bridge {self._bridge}")
+        # The tenant fixes the network: its VLAN tag rides the trunk bridge,
+        # so instances of different tenants can never share a segment
+        # (docs/ephemeral-lifecycle.md §Multitenancy invariants).
+        from ..models import Tenant
+
+        tenant = db.get(Tenant, instance.tenant_id)
+        net0 = f"virtio,bridge={self._bridge}"
+        if tenant is not None and tenant.vlan_id:
+            net0 += f",tag={tenant.vlan_id}"
+            add_log(
+                db,
+                instance.id,
+                f"network: attached to bridge {self._bridge}, vlan {tenant.vlan_id}",
+            )
+        else:
+            add_log(db, instance.id, f"network: attached to bridge {self._bridge}")
+        self._post(f"/nodes/{self._node}/qemu/{vmid}/config", net0=net0)
 
         upid = self._post(f"/nodes/{self._node}/qemu/{vmid}/status/start")
         self._wait_task(upid)
@@ -188,6 +204,25 @@ class ProxmoxProvider:
             return
         self._remove_vmid(int(vm["vmid"]))
         add_log(db, instance.id, "vm: stopped and destroyed", level="warn")
+
+    def upload_iso(self, filename: str, data: bytes) -> str:
+        """Forward an admin-uploaded ISO to the cluster's ISO storage
+        (``POST /nodes/{node}/storage/{storage}/upload``), so templates can
+        be built from it without touching the Proxmox UI — the Phase 7
+        hardened-runbook path (docs/usecase-a-baremetal.md §Layer 1 step 5)."""
+        resp = self._client.post(
+            f"/nodes/{self._node}/storage/{self._iso_storage}/upload",
+            data={"content": "iso"},
+            files={"filename": (filename, data, "application/x-iso9660-image")},
+        )
+        if resp.status_code >= 400:
+            raise ProxmoxError(
+                f"iso upload -> {resp.status_code}: {resp.text[:200]}"
+            )
+        upid = resp.json().get("data")
+        if upid:
+            self._wait_task(upid)
+        return f"{self._iso_storage}:iso/{filename}"
 
     def _remove_vmid(self, vmid: int) -> None:
         try:

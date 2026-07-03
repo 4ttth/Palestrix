@@ -1,4 +1,4 @@
-# PalestrIX Core API (Phase 2 + 2b + 3 + 4 + 5)
+# PalestrIX Core API (Phase 2 + 2b + 3 + 4 + 5 + 6 + 7)
 
 Python / FastAPI backend: passkey-first auth, RBAC, the versioned `/api/v1`
 surface, API-key and OAuth2 client-credentials auth for machines, the
@@ -6,9 +6,15 @@ webhook/event bus, object storage wiring, the plugin framework (discovery,
 capability scoping, encrypted config, crash isolation), the gamification
 service (Phase 3): the append-only Palestras ledger, per-source daily caps,
 solve-count-scaled flag awards, streaks with a weekly checkpoint, community
-score, and the student-only leaderboards, and orchestration (Phase 4): the
+score, and the student-only leaderboards, orchestration (Phase 4): the
 job queue (inline or Redis), the Docker/Proxmox adapters, the SSE log stream,
-and the TTL reaper with reconciliation. The web UI, plugins, and external
+and the TTL reaper with reconciliation, the malware sandbox module
+(Phase 6, `palestrix/sandbox/`), and the multitenant layer with hardened
+deployments (Phase 7): the `TenantCloud` contract with LocalCloud /
+OpenNebula / CloudStack adapters, full tenant lifecycle over the admin API,
+instances/vCPU/RAM quota enforcement at launch, tenant VLAN and subnet
+wiring in the Proxmox/Docker adapters, additive startup migrations, security
+headers, and the production boot guard. The web UI, plugins, and external
 tools all consume this same contract (docs/public-api.md).
 
 ## Quickstart
@@ -47,7 +53,7 @@ real deployment. Storage defaults to a local folder; set
 .venv\Scripts\python.exe -m pytest tests -q
 ```
 
-42 tests cover registration/login, API-key scope limits and revocation,
+63 tests cover registration/login, API-key scope limits and revocation,
 OAuth2 client credentials, WebAuthn ceremony endpoints, the RBAC matrix over
 HTTP, course/enrollment ownership, the CTF flow (first blood, cooldown,
 duplicate solves, leaderboard), instance quotas and TTL extension spend, the
@@ -63,7 +69,13 @@ TTL reaper pass with quota release, provision failure retry policy, Docker
 adapter with recorded CLI, and Proxmox VE adapter with mocked API), and the
 Phase 5 surface contract (per-caller `completed`/`solved` flags, writeup and
 course count enrichment, instance display enrichment, tenant usage, and the
-admin ISO/provider read endpoints with their RBAC gates). Plugin tests load
+admin ISO/provider read endpoints with their RBAC gates), the sandbox module
+(Phase 6, 11 tests in test_sandbox.py), and the multitenant layer (Phase 7,
+8 tests in test_tenancy.py: tenant materialization and lifecycle over the
+API, the full instances/vCPU/RAM quota check with the named denial, the
+Proxmox tenant-VLAN tag and admin ISO forwarding, the OpenNebula and
+CloudStack adapters against mocked managers, the additive migrations, the
+security headers, and the production boot guard). Plugin tests load
 the installed `plugins/palestrix-provider-demo` package plus throwaway
 fixtures under `tests/fixtures/`.
 
@@ -80,6 +92,9 @@ fixtures under `tests/fixtures/`.
 | `palestrix/storage.py` | Object storage (local / MinIO) |
 | `palestrix/providers.py` | Instance provider registry (demo + plugin-owned kinds) |
 | `palestrix/orchestration/` | Job queue (inline/redis), handlers, TTL reaper, Docker/Proxmox adapters |
+| `palestrix/tenancy/` | Multitenant cloud layer: TenantCloud contract, LocalCloud, OpenNebula/CloudStack adapters |
+| `palestrix/hardening.py` | Production boot guard + security-headers middleware |
+| `palestrix/migrations.py` | Additive startup migrations for pre-Phase-7 databases |
 | `palestrix/plugins/` | Plugin framework: manifest, contract, registry (docs/plugin-development.md) |
 | `palestrix/api/` | One router per resource group under `/api/v1` |
 | `palestrix/seed.py` | Idempotent demo data (mirrors frontend mocks) |
@@ -110,3 +125,16 @@ fixtures under `tests/fixtures/`.
   `/sandbox` API, a behavior-event SSE stream, and samples/reports sealed at
   rest. Set `PALESTRIX_SANDBOX_COORDINATOR_URL` to attach a live detonation
   host; leave it unset for the demo detonator. See docs/sandbox-security.md.
+- The **multitenant cloud layer** is live in `palestrix/tenancy/` (Phase 7):
+  a tenant is materialized at create time (VLAN tag + tenant CIDR from the
+  registry pools; group/VDC/network on OpenNebula or domain/account/network
+  on CloudStack when `PALESTRIX_CLOUD_BACKEND` names one), quota edits sync
+  through, and archiving retires the manager objects while the row, VLAN,
+  and CIDR stay reserved. The API enforces the instances/vCPU/RAM quotas at
+  launch against each template's declared `cpu`/`ram_gb` spec, and the
+  denial names the blocking quota. Deployments harden themselves: setting
+  `PALESTRIX_ENVIRONMENT=production` arms the boot guard
+  (`palestrix/hardening.py`) that refuses to start on dev secrets, SQLite,
+  plaintext origins, disabled TLS verification, the inline queue, a
+  disabled reaper, or local-folder storage; every response carries baseline
+  security headers either way.

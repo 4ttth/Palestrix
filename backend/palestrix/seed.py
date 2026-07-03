@@ -48,15 +48,21 @@ def seed() -> None:
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        if db.scalar(select(Tenant).where(Tenant.id == "hau-bscs-3a")) is None:
-            db.add(
-                Tenant(
-                    id="hau-bscs-3a",
-                    name="HAU BSCS 3A",
-                    instance_quota=3,
-                    network_cidr="10.24.7.0/24",
-                )
+        tenant = db.scalar(select(Tenant).where(Tenant.id == "hau-bscs-3a"))
+        if tenant is None:
+            tenant = Tenant(
+                id="hau-bscs-3a",
+                name="HAU BSCS 3A",
+                instance_quota=3,
+                network_cidr="10.24.7.0/24",
             )
+            db.add(tenant)
+        if tenant.vlan_id is None:
+            # Materialize through the Phase 7 cloud layer (LocalCloud here:
+            # VLAN tag + cloud_ref; the pinned CIDR is kept).
+            from .tenancy import active_cloud
+
+            active_cloud().ensure_tenant(db, tenant)
 
         pw = hash_password(PASSWORD)
         users: dict[str, User] = {}

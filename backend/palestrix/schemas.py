@@ -174,6 +174,8 @@ class LabTemplateOut(ORMModel):
     access_mode: str
     ttl_minutes_default: int
     ttl_minutes_max: int
+    cpu: int
+    ram_gb: int
 
 
 class InstanceCreateIn(BaseModel):
@@ -405,9 +407,20 @@ class TenantIn(BaseModel):
     id: str = Field(pattern=r"^[a-z0-9-]{3,64}$")
     name: str
     instance_quota: int = Field(default=3, ge=0, le=1024)
-    cpu_cap: int = 48
-    ram_cap_gb: int = 96
-    network_cidr: str = ""
+    cpu_cap: int = Field(default=48, ge=0, le=4096)
+    ram_cap_gb: int = Field(default=96, ge=0, le=16384)
+    network_cidr: str = ""  # blank: carved from PALESTRIX_TENANT_CIDR_POOL
+
+
+class TenantPatchIn(BaseModel):
+    """Quota/naming edits. The id, VLAN, and CIDR are fixed at creation —
+    reissuing a tenant's network would break the isolation invariants
+    (docs/ephemeral-lifecycle.md)."""
+
+    name: str | None = None
+    instance_quota: int | None = Field(default=None, ge=0, le=1024)
+    cpu_cap: int | None = Field(default=None, ge=0, le=4096)
+    ram_cap_gb: int | None = Field(default=None, ge=0, le=16384)
 
 
 class TenantOut(ORMModel):
@@ -417,7 +430,20 @@ class TenantOut(ORMModel):
     cpu_cap: int
     ram_cap_gb: int
     network_cidr: str
+    vlan_id: int | None
+    cloud_ref: str
+    archived: bool
     instances_active: int = 0
+    cpu_active: int = 0
+    ram_active_gb: int = 0
+
+
+class CloudOut(BaseModel):
+    """The active multitenant cloud layer (local, opennebula, cloudstack)."""
+
+    name: str
+    tenants: int = 0
+    tenants_archived: int = 0
 
 
 class RoleChangeIn(BaseModel):

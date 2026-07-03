@@ -6,7 +6,7 @@ Students train on real ephemeral VMs and containers, earn and spend the
 Palestras currency, and compete in a CTF arena; teachers publish labs
 without touching infrastructure; admins run the range from one console.
 
-**Status: Phase 6 complete.** The repository contains the full frontend on
+**Status: Phase 7 complete.** The repository contains the full frontend on
 a locked design theme (Phase 1), the implementation documentation for both
 deployment use cases, the FastAPI core API (Phase 2): passkey auth, RBAC,
 the versioned `/api/v1` surface, API-key + OAuth2 client-credentials auth,
@@ -30,9 +30,19 @@ pre-analysis of every submission (magic-byte typing, Shannon entropy,
 string/IOC extraction, EICAR detection), a verdict with a MITRE ATT&CK
 mapping, a behavior-event timeline streamed over SSE, samples and reports
 sealed at rest, and admin-gated artifact export — with the live `/sandbox`
-surface wired to all of it. See [backend/README.md](backend/README.md) to
-run the API and [docs/plugin-development.md](docs/plugin-development.md) to
-write a plugin. Next: Phase 7 (multitenant layer + hardened deployments).
+surface wired to all of it — and the multitenant layer with hardened
+deployments (Phase 7): the `TenantCloud` contract
+(`backend/palestrix/tenancy/`) with a registry-only LocalCloud plus real
+OpenNebula and CloudStack adapters, full tenant lifecycle from the admin
+console (create materializes VLAN + CIDR, quota edits sync through, archive
+requires an idle tenant), instances/vCPU/RAM quota enforcement at launch
+with the blocking quota named, tenant VLAN tags on the Proxmox adapter and
+tenant subnets on the Docker adapter, admin ISO forwarding to cluster
+storage, additive startup migrations, security headers on every response,
+and a production boot guard that refuses to start misconfigured. See
+[backend/README.md](backend/README.md) to run the API and
+[docs/plugin-development.md](docs/plugin-development.md) to write a plugin.
+Next: Phase 8 (Canvas LMS integration + step-by-step install documentation).
 
 ## Run it
 
@@ -173,7 +183,26 @@ never served and artifact export is admin-only. The `/sandbox` surface is
 live end to end, and `sandbox.report.ready` fires on the webhook/event bus.
 Full test suite: 53 tests pass.
 
-Phase 7: multitenant layer + hardened deployments. 
+Phase 7: multitenant layer + hardened deployments. **Done** — 8 tests in
+test_tenancy.py. The `TenantCloud` contract (`backend/palestrix/tenancy/`)
+mirrors the Phase 4/6 registries: LocalCloud (the default) allocates the
+tenant VLAN tag and a /24 from the configured pools in the registry, and
+`PALESTRIX_CLOUD_BACKEND` swaps in the OpenNebula adapter (group + VDC +
+VLAN-backed network over XML-RPC) or the CloudStack adapter (domain +
+account + isolated network over signed REST). Tenant lifecycle is fully
+API-driven: create materializes, PATCH syncs quotas through, DELETE archives
+(refused while instances are active; the VLAN/CIDR stay reserved forever).
+Launch enforces all three tenant quotas — instances, vCPU, RAM against each
+template's declared `cpu`/`ram_gb` — and the 409 names the blocking quota;
+the Proxmox adapter tags `net0` with the tenant VLAN, the Docker adapter
+pins the tenant bridge subnet, and admin ISO uploads forward to cluster
+storage. Hardened deployments: additive startup migrations
+(`migrations.py`), security headers on every response, and the
+`PALESTRIX_ENVIRONMENT=production` boot guard (`hardening.py`) that refuses
+to start on any readiness finding. Both runbooks updated with the cloud
+layer wiring and hardening steps; the admin console gained the full tenants
+surface (create, quota edits, archive, live usage, active cloud layer).
+Full test suite: 63 tests pass.
 
 Phase 8: Canvas LMS integration and a detailed (GitHub formatted) step-by-step installation and setup documentation for both use cases.
 

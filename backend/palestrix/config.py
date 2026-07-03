@@ -11,6 +11,11 @@ class Settings(BaseSettings):
         env_prefix="PALESTRIX_", env_file=".env", extra="ignore"
     )
 
+    # "production" arms the Phase 7 boot guard: the app refuses to start
+    # while hardening.production_readiness() reports failures (dev secret,
+    # SQLite, plaintext CORS origins, TLS verification off, ...).
+    environment: str = "development"  # "development" | "production"
+
     database_url: str = "sqlite:///./palestrix.db"
     secret_key: str = "dev-only-secret-change-me"
 
@@ -71,6 +76,33 @@ class Settings(BaseSettings):
     proxmox_verify_tls: bool = True
     proxmox_bridge: str = "vmbr0"  # tenant VLAN tags ride on this bridge
     proxmox_timeout_seconds: float = 120.0
+    proxmox_iso_storage: str = "local"  # admin ISO uploads forward here
+
+    # Multitenant cloud layer (Phase 7). "local" allocates tenant VLANs and
+    # CIDRs in the registry only (the dev/test default and the smallest
+    # baremetal deployment); "opennebula" or "cloudstack" additionally
+    # materializes every tenant in that manager (group/VDC or domain/account,
+    # quotas, and the tenant network). Pick one per site.
+    cloud_backend: str = "local"  # "local" | "opennebula" | "cloudstack"
+    tenant_vlan_min: int = 100
+    tenant_vlan_max: int = 1999
+    tenant_cidr_pool: str = "10.24.0.0/16"  # carved into /24s per tenant
+
+    # OpenNebula front-end (XML-RPC), e.g. http://one.internal:2633/RPC2
+    opennebula_endpoint: str = ""
+    opennebula_username: str = ""
+    opennebula_password: str = ""
+    opennebula_phydev: str = "bond0"  # trunk device carrying the 802.1Q tags
+    opennebula_timeout_seconds: float = 30.0
+
+    # CloudStack management server, e.g. https://cs.internal:8080/client/api
+    cloudstack_endpoint: str = ""
+    cloudstack_api_key: str = ""
+    cloudstack_secret_key: str = ""
+    cloudstack_zone_id: str = ""
+    cloudstack_network_offering_id: str = ""
+    cloudstack_verify_tls: bool = True
+    cloudstack_timeout_seconds: float = 30.0
 
     # Docker adapter: activated for the "container" kind when enabled. Drives
     # the local docker CLI; images build from teacher archives in storage.

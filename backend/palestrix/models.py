@@ -76,6 +76,14 @@ ACTIVE_STATES = (
 
 
 class Tenant(Base):
+    """A class section, an event, or a single student: the isolation unit.
+    The tenant fixes its instances' network (``vlan_id`` on the trunk bridge
+    baremetal, subnet/namespace on cloud), naming prefix, and quota pool
+    (docs/ephemeral-lifecycle.md §Multitenancy invariants). ``cloud_ref`` is
+    the Phase 7 cloud layer's handle for the materialized objects (OpenNebula
+    group/VDC, CloudStack domain/account); archived tenants keep their row —
+    ledger and instance history reference it — but can no longer launch."""
+
     __tablename__ = "tenants"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)  # slug
@@ -84,6 +92,9 @@ class Tenant(Base):
     cpu_cap: Mapped[int] = mapped_column(Integer, default=48)
     ram_cap_gb: Mapped[int] = mapped_column(Integer, default=96)
     network_cidr: Mapped[str] = mapped_column(String(32), default="")
+    vlan_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cloud_ref: Mapped[str] = mapped_column(String(256), default="")
+    archived: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -246,6 +257,10 @@ class LabTemplate(Base):
     access_mode: Mapped[str] = mapped_column(String(16), default="no-gui")  # gui|no-gui
     ttl_minutes_default: Mapped[int] = mapped_column(Integer, default=90)
     ttl_minutes_max: Mapped[int] = mapped_column(Integer, default=240)
+    # Per-instance resource spec, charged against the tenant's cpu_cap /
+    # ram_cap_gb while the instance is in an active state (Phase 7).
+    cpu: Mapped[int] = mapped_column(Integer, default=1)
+    ram_gb: Mapped[int] = mapped_column(Integer, default=1)
     archive_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     vm_template: Mapped[str | None] = mapped_column(String(128), nullable=True)
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"))

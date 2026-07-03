@@ -30,6 +30,8 @@ def publish_template(
     access_mode: str = Form(default="no-gui", pattern="^(gui|no-gui)$"),
     ttl_minutes_default: int = Form(default=90, ge=15, le=480),
     ttl_minutes_max: int = Form(default=240, ge=15, le=480),
+    cpu: int = Form(default=1, ge=1, le=16),
+    ram_gb: int = Form(default=1, ge=1, le=64),
     vm_template: str | None = Form(default=None),
     archive: UploadFile | None = None,
 ):
@@ -70,6 +72,8 @@ def publish_template(
         access_mode=access_mode,
         ttl_minutes_default=ttl_minutes_default,
         ttl_minutes_max=max(ttl_minutes_max, ttl_minutes_default),
+        cpu=cpu,
+        ram_gb=ram_gb,
         archive_key=archive_key,
         vm_template=vm_template,
         owner_id=principal.user_id,

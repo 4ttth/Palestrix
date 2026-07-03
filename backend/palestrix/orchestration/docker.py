@@ -24,7 +24,7 @@ import subprocess
 from typing import Callable
 
 from ..config import get_settings
-from ..models import ACTIVE_STATES, Instance, InstanceState
+from ..models import ACTIVE_STATES, Instance, InstanceState, Tenant
 from ..providers import add_log
 from ..storage import get_storage
 
@@ -74,17 +74,20 @@ class DockerProvider:
         net = f"{settings.docker_network_prefix}{instance.tenant_id}"
         existing = self._run(["network", "ls", "--format", "{{.Name}}"]).splitlines()
         if net not in existing:
-            self._run(
-                [
-                    "network",
-                    "create",
-                    "--driver",
-                    "bridge",
-                    "--label",
-                    f"palestrix.tenant={instance.tenant_id}",
-                    net,
-                ]
-            )
+            args = [
+                "network",
+                "create",
+                "--driver",
+                "bridge",
+                "--label",
+                f"palestrix.tenant={instance.tenant_id}",
+            ]
+            # The tenant fixes the network: its CIDR pins the bridge subnet
+            # (docs/ephemeral-lifecycle.md §Multitenancy invariants).
+            tenant = db.get(Tenant, instance.tenant_id)
+            if tenant is not None and tenant.network_cidr:
+                args += ["--subnet", tenant.network_cidr]
+            self._run([*args, net])
             add_log(db, instance.id, f"network: created tenant-isolated bridge {net}")
         else:
             add_log(db, instance.id, f"network: attached to tenant bridge {net}")

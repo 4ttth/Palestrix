@@ -63,8 +63,21 @@ function apiErrorLabel(status: number, detail: unknown): string {
       ? String((detail as { error: unknown }).error)
       : null;
   switch (code) {
-    case "quota_exceeded":
-      return "Your tenant is at its instance quota. Destroy an instance first.";
+    case "quota_exceeded": {
+      const d = detail as {
+        quota?: string;
+        limit?: number;
+        used?: number;
+        requested?: number;
+      };
+      const noun =
+        d.quota === "cpu" ? "vCPU" : d.quota === "ram" ? "RAM (GB)" : "instance";
+      const numbers =
+        d.limit !== undefined && d.used !== undefined && d.requested !== undefined
+          ? ` (${d.used} in use + ${d.requested} requested > ${d.limit})`
+          : "";
+      return `Your tenant is at its ${noun} quota${numbers}. Destroy an instance first, or ask an administrator to raise the cap.`;
+    }
     case "insufficient_palestras": {
       const d = detail as { cost?: number; balance?: number };
       return `Not enough Palestras: costs ${d.cost ?? "?"} P, you have ${d.balance ?? "?"} P.`;
@@ -115,6 +128,12 @@ export const api = {
   post<T>(path: ApiPath, body?: unknown): Promise<T> {
     return request<T>(path, {
       method: "POST",
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  },
+  patch<T>(path: ApiPath, body?: unknown): Promise<T> {
+    return request<T>(path, {
+      method: "PATCH",
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   },

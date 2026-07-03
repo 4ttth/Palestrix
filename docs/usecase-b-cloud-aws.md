@@ -92,6 +92,16 @@ VM-class labs (Windows targets, kernel exercises):
 | Naming | `labs-<tenant>` namespaces, labeled pods | Resource tags |
 | Cleanup | Namespace delete removes everything for an event | Terminate by tag |
 
+The tenant registry (Phase 7) is the same as on baremetal: cloud deployments
+run `PALESTRIX_CLOUD_BACKEND=local` — OpenNebula/CloudStack front a
+hypervisor you own, not a managed cloud — and the tenant row's CIDR and
+naming drive the mechanisms above (`labs-<tenant>` namespaces, per-tenant
+subnets/security groups). The API enforces all three tenant quotas
+(instances, vCPU, RAM against each template's declared `cpu`/`ram_gb`) at
+launch, before any pod or VM exists; namespace ResourceQuota is the
+defense-in-depth behind it, not the primary control. Archiving a tenant
+stops launches immediately and is the signal to delete its namespace.
+
 ## TTL reaper in the cloud
 
 Two cooperating mechanisms (belt and suspenders):
@@ -125,6 +135,28 @@ Two cooperating mechanisms (belt and suspenders):
 - Secrets / **Secrets Manager**: database URL, Redis URL, webhook signing
   keys, registry credentials, Canvas keys (Phase 8).
 
+## Production boot guard (Phase 7)
+
+Set `PALESTRIX_ENVIRONMENT=production` on the API and worker pods. At boot
+the app runs its readiness checks and refuses to start while any fail —
+a crash-looping pod after a config change means a finding to fix, never a
+check to skip. Each finding maps to a service in the table above:
+
+| Finding | Cloud remedy |
+|---|---|
+| Secret is the dev default / under 32 chars | Unique `PALESTRIX_SECRET_KEY` from the secrets service / **Secrets Manager** |
+| Database is SQLite | `PALESTRIX_DATABASE_URL` at the managed PostgreSQL / **RDS** |
+| Origin is not https | `PALESTRIX_ORIGIN=https://...` behind the load balancer / **ALB** + **ACM** (passkeys require a secure origin) |
+| CORS allows `*` or plaintext origins | Pin `PALESTRIX_CORS_ORIGINS` to the exact frontend origin |
+| Queue is inline | `PALESTRIX_QUEUE_BACKEND=redis` at the managed Redis / **ElastiCache** |
+| Reaper disabled | `PALESTRIX_REAPER_ENABLED=true` (a missed TTL is a billing bug here) |
+| Storage is the local folder | `PALESTRIX_STORAGE_BACKEND=minio` pointed at object storage / **S3** |
+
+Every API response also carries baseline security headers (nosniff,
+frame-deny, no-referrer, Permissions-Policy, HSTS in production); keep the
+load balancer/CDN copies of those headers as belt and suspenders, not as
+the only source.
+
 ## Cost guardrails
 
 - Lab node group scales to zero outside class hours (scheduled scaling).
@@ -144,3 +176,8 @@ Identical to Use Case A's acceptance test, plus:
    (pods, services, load balancer target groups, tagged VMs).
 3. Review the bill the day after the first event; every line item should map
    to a row in the service table above.
+4. Deploy once with a deliberately broken readiness check (for example the
+   dev secret): the API pod must crash-loop naming the finding instead of
+   serving traffic.
+5. Launch labs up to a tenant's vCPU cap; the next launch must be refused
+   with the quota named, before any pod or VM is created.

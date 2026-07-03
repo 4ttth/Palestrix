@@ -88,6 +88,8 @@ export type LabTemplateOut = {
   access_mode: "gui" | "no-gui";
   ttl_minutes_default: number;
   ttl_minutes_max: number;
+  cpu: number;
+  ram_gb: number;
 };
 
 export type InstanceOut = {
@@ -215,7 +217,19 @@ export type TenantOut = {
   cpu_cap: number;
   ram_cap_gb: number;
   network_cidr: string;
+  vlan_id: number | null;
+  cloud_ref: string;
+  archived: boolean;
   instances_active: number;
+  cpu_active: number;
+  ram_active_gb: number;
+};
+
+/** The active multitenant cloud layer (local, opennebula, cloudstack). */
+export type CloudOut = {
+  name: string;
+  tenants: number;
+  tenants_archived: number;
 };
 
 export type StoredObjectOut = {
