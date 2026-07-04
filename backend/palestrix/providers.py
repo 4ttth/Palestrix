@@ -150,5 +150,18 @@ class DemoProvider:
     def destroy(self, db, instance) -> None:
         add_log(db, instance.id, "instance stopped and destroyed", level="warn")
 
+    def read_files(self, db, instance, paths: list[str]) -> dict[str, str | None]:
+        """Automated-checking probe. The demo instance has no real
+        filesystem, so every path honestly reads as absent — a graded demo
+        lab scores 0, it never pretends (the Docker and Proxmox adapters
+        read the real system)."""
+        add_log(
+            db,
+            instance.id,
+            "autograde: demo provider has no real filesystem; all checks read absent",
+            level="warn",
+        )
+        return {path: None for path in paths}
+
 
 register_provider(DemoProvider())

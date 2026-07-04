@@ -20,7 +20,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from .. import gamification, schemas
+from .. import gamification, grading, schemas
 from ..config import get_settings
 from ..db import SessionLocal, get_db
 from ..events import dispatch_pending, emit
@@ -262,6 +262,9 @@ def stop_instance(
     instance = _owned_or_admin(db, principal, instance_id)
     if instance.state is not InstanceState.running:
         raise HTTPException(status.HTTP_409_CONFLICT, "instance is not running")
+    # Auto-graded labs: the running box is the evidence, so grade before the
+    # provider takes it away (docs/automated-checking.md §When grading runs).
+    grading.autograde_if_due(db, instance, trigger="stop")
     template = db.get(LabTemplate, instance.template_id)
     provider = provider_for_kind(template.kind) if template else None
     if provider is not None:
@@ -332,6 +335,7 @@ def destroy(
     instance = _owned_or_admin(db, principal, instance_id)
     if instance.state not in ACTIVE_STATES:
         raise HTTPException(status.HTTP_409_CONFLICT, "instance already gone")
+    grading.autograde_if_due(db, instance, trigger="destroy")
     template = db.get(LabTemplate, instance.template_id)
     provider = provider_for_kind(template.kind) if template else None
     if provider is not None:
@@ -344,3 +348,73 @@ def destroy(
     db.commit()
     background.add_task(dispatch_pending, SessionLocal())
     return _instance_out(db, instance)
+
+
+@router.post("/{instance_id}/grade", response_model=schemas.GradeCheckOut)
+def grade_instance(
+    instance_id: str,
+    background: BackgroundTasks,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+):
+    """The student's explicit hand-in: check every rubric objective against
+    the live system right now. Re-runnable while the instance is running —
+    the latest check is the grade of record. The instance keeps running
+    (and keeps being re-gradeable) until stop/destroy/TTL."""
+    from ..integrations.passback import dispatch_due_passbacks
+
+    instance = _owned_or_admin(db, principal, instance_id)
+    if instance.state is not InstanceState.running:
+        raise HTTPException(status.HTTP_409_CONFLICT, "instance is not running")
+    if grading.published_scheme_for(db, instance.template_id) is None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "this lab is not auto-graded"
+        )
+    try:
+        check = grading.autograde_if_due(
+            db, instance, trigger="student", force=True
+        )
+    except grading.GradingUnavailable as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc))
+    db.commit()
+    background.add_task(dispatch_pending, SessionLocal())
+    background.add_task(dispatch_due_passbacks, SessionLocal())
+    return check
+
+
+@router.get("/{instance_id}/grading", response_model=schemas.InstanceGradingOut)
+def instance_grading(
+    instance_id: str,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+):
+    """The student-safe grading view for a lab: the rubric they are scored
+    on (titles and weights — never paths, markers, or expected hashes) and
+    their latest result if a check has run."""
+    from ..models import GradeCheck, RubricItem
+
+    instance = _owned_or_admin(db, principal, instance_id)
+    out = schemas.InstanceGradingOut()
+    scheme = grading.published_scheme_for(db, instance.template_id)
+    if scheme is None:
+        return out
+    out.scheme_kind = scheme.kind
+    out.scheme_status = scheme.status
+    out.rubric = [
+        schemas.RubricItemPublicOut(
+            key=item.key, title=item.title, weight_percent=item.weight_percent
+        )
+        for item in db.scalars(
+            select(RubricItem)
+            .where(RubricItem.scheme_id == scheme.id)
+            .order_by(RubricItem.position)
+        ).all()
+    ]
+    latest = db.scalar(
+        select(GradeCheck)
+        .where(GradeCheck.instance_id == instance.id)
+        .order_by(GradeCheck.created_at.desc(), GradeCheck.id.desc())
+    )
+    if latest is not None:
+        out.result = schemas.GradeCheckOut.model_validate(latest)
+    return out

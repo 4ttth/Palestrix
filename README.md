@@ -6,7 +6,7 @@ Students train on real ephemeral VMs and containers, earn and spend the
 Palestras currency, and compete in a CTF arena; teachers publish labs
 without touching infrastructure; admins run the range from one console.
 
-**Status: Phase 7 complete.** The repository contains the full frontend on
+**Status: Phase 8 complete.** The repository contains the full frontend on
 a locked design theme (Phase 1), the implementation documentation for both
 deployment use cases, the FastAPI core API (Phase 2): passkey auth, RBAC,
 the versioned `/api/v1` surface, API-key + OAuth2 client-credentials auth,
@@ -39,10 +39,14 @@ requires an idle tenant), instances/vCPU/RAM quota enforcement at launch
 with the blocking quota named, tenant VLAN tags on the Proxmox adapter and
 tenant subnets on the Docker adapter, admin ISO forwarding to cluster
 storage, additive startup migrations, security headers on every response,
-and a production boot guard that refuses to start misconfigured. See
-[backend/README.md](backend/README.md) to run the API and
+and a production boot guard that refuses to start misconfigured — and Canvas
+LMS integration (Phase 8): an `ExternalPlatform` adapter layer
+(`backend/palestrix/integrations/`) with Canvas as the reference adapter —
+LTI 1.3 launch, NRPS roster sync, AGS grade passback with retry, and Deep
+Linking 2.0 — wired to a live Canvas panel in the course manager, plus a
+detailed, GitHub-formatted step-by-step install guide for both deployment
+use cases. See [backend/README.md](backend/README.md) to run the API and
 [docs/plugin-development.md](docs/plugin-development.md) to write a plugin.
-Next: Phase 8 (Canvas LMS integration + step-by-step install documentation).
 
 ## Run it
 
@@ -119,6 +123,8 @@ wired to assignments + `/labs/templates`.
 | [docs/usecase-b-cloud-aws.md](docs/usecase-b-cloud-aws.md)         | Cloud runbook with generic and AWS names for every service                                         |
 | [docs/ephemeral-lifecycle.md](docs/ephemeral-lifecycle.md)         | Instance state machine, TTL reaper, multitenancy invariants                                        |
 | [docs/rbac-matrix.md](docs/rbac-matrix.md)                         | Full role/capability matrix + gamification rules                                                   |
+| [docs/managing-courses-and-users.md](docs/managing-courses-and-users.md) | How-to: create classes, publish modules, enroll students, manage users/roles                 |
+| [docs/automated-checking.md](docs/automated-checking.md)           | Rubric autograding: finished-vs-unfinished diff, win files, provider probes, gradebook             |
 | [docs/sandbox-security.md](docs/sandbox-security.md)               | Malware sandbox isolation and hardening                                                            |
 | [docs/public-api.md](docs/public-api.md)                           | `/api/v1` surface, auth, webhooks, versioning                                                      |
 | [docs/plugin-development.md](docs/plugin-development.md)           | Plugin manifest, lifecycle hooks, UI slots, sandboxing                                             |
@@ -204,17 +210,24 @@ layer wiring and hardening steps; the admin console gained the full tenants
 surface (create, quota edits, archive, live usage, active cloud layer).
 Full test suite: 63 tests pass.
 
-Phase 8: Canvas LMS integration and a detailed (GitHub formatted) step-by-step installation and setup documentation for both use cases. **Todos:**
-
-- ~~Study backend patterns (events, deps, courses API, tests)~~
-- ~~Backend: integrations package (ExternalPlatform contract + registry)~~
-- ~~Backend: Canvas LMS adapter (LTI 1.3 launch, NRPS roster, AGS grades, deep linking)~~
-- ~~Backend: models + config + grade-passback queue with retry~~
-- ~~Backend: /integrations API routes (JWKS, launch, links, sync, receipts)~~
-- ~~Backend: tests (test_[integrations.py](http://integrations.py)) — 8 tests, full suite 71 green~~
-- ~~Frontend: Canvas panel, LTI login handoff, API types — build green~~
-- ~~Docs: step-by-step install guide, Use Case A (baremetal)~~
-- ~~Docs: step-by-step install guide, Use Case B (cloud/AWS)~~
-- Update README, architecture, public-api, canvas docs; run full test suite + build
+Phase 8: Canvas LMS integration and step-by-step install documentation.
+**Done** — 8 tests in test_integrations.py, full suite 71 green. The
+`ExternalPlatform` contract (`backend/palestrix/integrations/`) mirrors the
+Phase 4/6/7 registries: nothing answers until `PALESTRIX_CANVAS_ISSUER` +
+`_CLIENT_ID` activate the Canvas adapter, so the next platform (Moodle,
+Google Classroom) follows the same path. Canvas covers all four LTI
+protocols — 1.3 launch (OIDC initiation, RS256 id_token validation, single-use
+nonces), NRPS roster sync, AGS grade passback, and Deep Linking 2.0 for the
+teacher's lab picker. Identity maps by `sub`+issuer with no silent account
+creation; roster sync pre-provisions and un-enrolls only the students it
+mapped itself; the grade-passback queue retries on the reaper heartbeat with
+exponential backoff and parks exhausted rows as `failed` for a one-click
+retry in the course panel. The frontend gained a live Canvas panel
+(link/sync/grade-queue) in the course manager and the LTI login handoff;
+`lib/api/types.ts` carries the wire types. Both runbooks
+([docs/install-usecase-a-baremetal.md](docs/install-usecase-a-baremetal.md),
+[docs/install-usecase-b-cloud-aws.md](docs/install-usecase-b-cloud-aws.md))
+now walk every step from bare OS to a running platform, GitHub-formatted.
+Full test suite: 71 tests pass; production build: all 14 routes compile.
 
 Details in [docs/architecture.md](docs/architecture.md).

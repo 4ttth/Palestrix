@@ -170,6 +170,24 @@ adapter for the isolated host; verdict + MITRE mapping; an SSE behavior-event
 stream; samples and reports sealed at rest. See sandbox-security.md
 §Implementation status and public-api.md §Sandbox surface.
 
+### External integrations
+
+Implemented in Phase 8 (`backend/palestrix/integrations/`) behind an
+`ExternalPlatform` contract that mirrors the Phase 4/6/7 registries: nothing
+answers by default, and `activate_configured_platforms` (called from the API
+lifespan and the worker) registers whichever adapters the environment
+configures — Canvas LMS is the reference adapter, so the next platform
+(Moodle, Google Classroom) follows the same path. Adapters are pure platform
+clients; the API owns the registry rows, the same split as `TenantCloud`.
+Three flows ride the contract: LTI 1.3 launch with identity mapping by
+`sub`+issuer (an unmapped identity claims an account by asserted e-mail, or
+lands on an "ask your teacher to sync" page — never silent creation), NRPS
+roster sync that pre-provisions and un-enrolls only the students this
+platform mapped, and an AGS grade-passback queue that delivers on the reaper
+heartbeat with exponential backoff and parks exhausted rows as `failed` for
+a manual retry in the teacher's course panel. Full contract in
+integrations-canvas-lms.md and public-api.md §Integrations surface.
+
 ### Storage
 
 PostgreSQL for relational data. MinIO (S3-compatible) for objects: admin

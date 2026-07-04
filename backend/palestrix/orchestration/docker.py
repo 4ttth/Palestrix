@@ -161,6 +161,23 @@ class DockerProvider:
             level="ok",
         )
 
+    def read_files(self, db, instance, paths: list[str]) -> dict[str, str | None]:
+        """Automated-checking probe: hash files inside the live container.
+        One ``docker exec sha256sum`` per path; a missing file (or an exec
+        against a container that is gone) reads as absent — the checker
+        treats absence as its own answer, never an error."""
+        cid = self._container_for(instance.id)
+        if cid is None:
+            raise DockerError("container not found for grading probe")
+        observed: dict[str, str | None] = {}
+        for path in paths:
+            quoted = "'" + path.replace("'", "'\\''") + "'"
+            out = self._run(
+                ["exec", cid, "sh", "-c", f"sha256sum {quoted} 2>/dev/null || true"]
+            ).strip()
+            observed[path] = out.split()[0] if out else None
+        return observed
+
     def stop(self, db, instance) -> None:
         cid = self._container_for(instance.id)
         if cid:

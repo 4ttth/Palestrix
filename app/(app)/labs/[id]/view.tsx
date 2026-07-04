@@ -16,6 +16,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Countdown } from "@/components/lab/Countdown";
+import { GradingCard } from "@/components/lab/GradingCard";
 import { ProvisioningLog } from "@/components/lab/ProvisioningLog";
 import { Empty, LoadFailed, Loading } from "@/components/ui/async";
 import { api, ApiError } from "@/lib/api/client";
@@ -229,6 +230,7 @@ export function LabView({ instanceId }: { instanceId: string }) {
           </div>
 
           <div className="space-y-6">
+            <GradingCard instanceId={inst.id} running={running} />
             <Card>
               <CardHeader>
                 <CardTitle>Time to live</CardTitle>
