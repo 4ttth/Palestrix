@@ -84,6 +84,10 @@ def submit_run(
             storage_key=f"{SAMPLE_BUCKET}/{sha256}",
         )
         db.add(sample)
+        # The run's sample_sha256 FK needs the sample row inserted first;
+        # without a relationship() the ORM won't order the two inserts, and
+        # PostgreSQL (unlike SQLite in dev/tests) enforces the constraint.
+        db.flush()
 
     run = SandboxRun(
         id=f"sbx-{secrets.token_hex(4)}",

@@ -46,6 +46,20 @@ Next: Phase 8 (Canvas LMS integration + step-by-step install documentation).
 
 ## Run it
 
+**One command (Docker):** the full service topology — PostgreSQL, Redis +
+worker, MinIO, API, frontend — seeded and ready on any workstation:
+
+```bash
+docker compose up --build -d      # then open http://localhost:3000
+```
+
+Step-by-step guide, demo accounts for all four roles, and the opt-in
+real-container-labs overlay: [docs/install-demo-lowspec.md](docs/install-demo-lowspec.md).
+Production installs: [docs/install-usecase-a-baremetal.md](docs/install-usecase-a-baremetal.md)
+(your own hardware) and [docs/install-usecase-b-cloud-aws.md](docs/install-usecase-b-cloud-aws.md) (AWS).
+
+**Or from source:**
+
 ```bash
 # Terminal 1: the core API (see backend/README.md for the venv setup)
 cd backend

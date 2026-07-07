@@ -1,0 +1,122 @@
+# PalestrIX demo & evaluation stack — the full service topology (PostgreSQL,
+# Redis queue + worker, MinIO object storage, API, frontend) on one machine:
+#
+#   docker compose up --build -d
+#
+# Frontend:      http://localhost:3000   (demo login: rafaela@example.edu /
+#                                         palestrix-dev-only! — see the guide)
+# API + Swagger: http://localhost:8000/api/v1/docs
+# MinIO console: http://localhost:9001   (palestrix / palestrix-minio-demo)
+#
+# Step-by-step guide, role accounts, and the real-container-labs option:
+# docs/install-demo-lowspec.md. This stack is for evaluation and classrooms
+# of one — production deployments follow docs/install-usecase-a-baremetal.md.
+
+x-palestrix-env: &palestrix-env
+  # PALESTRIX_ENVIRONMENT stays "development": the demo runs on plain http,
+  # which the production boot guard (correctly) refuses. Do not set
+  # "production" here — harden per the baremetal runbook instead.
+  PALESTRIX_DATABASE_URL: postgresql+psycopg://palestrix:palestrix-db-demo@db:5432/palestrix
+  PALESTRIX_QUEUE_BACKEND: redis
+  PALESTRIX_REDIS_URL: redis://redis:6379/0
+  PALESTRIX_STORAGE_BACKEND: minio
+  PALESTRIX_MINIO_ENDPOINT: minio:9000
+  PALESTRIX_MINIO_ACCESS_KEY: palestrix
+  PALESTRIX_MINIO_SECRET_KEY: palestrix-minio-demo
+  PALESTRIX_ORIGIN: http://localhost:3000
+  PALESTRIX_RP_ID: localhost
+  PALESTRIX_CORS_ORIGINS: http://localhost:3000
+  # Demo-only secret (>=32 chars). Rotate if this stack outlives a demo.
+  PALESTRIX_SECRET_KEY: demo-only-secret-0123456789abcdefghij
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: palestrix
+      POSTGRES_PASSWORD: palestrix-db-demo
+      POSTGRES_DB: palestrix
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U palestrix -d palestrix"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: palestrix
+      MINIO_ROOT_PASSWORD: palestrix-minio-demo
+    ports:
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    # Seed is idempotent (existing rows are left alone), so it is safe to run
+    # on every boot; it also creates the schema on first boot.
+    command: sh -c "python -m palestrix.seed && exec uvicorn palestrix.main:app --host 0.0.0.0 --port 8000"
+    environment:
+      <<: *palestrix-env
+      # The worker owns the TTL reaper loop in redis-queue deployments.
+      PALESTRIX_REAPER_ENABLED: "false"
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: python -m palestrix.worker
+    environment:
+      <<: *palestrix-env
+      PALESTRIX_REAPER_ENABLED: "true"
+    healthcheck:
+      disable: true
+    depends_on:
+      api:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        # Inlined into the browser bundle at build time; must be the origin
+        # YOUR BROWSER reaches, so localhost — never the compose hostname.
+        NEXT_PUBLIC_PALESTRIX_API: http://localhost:8000
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  miniodata:
