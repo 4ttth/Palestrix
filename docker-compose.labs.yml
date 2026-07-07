@@ -1,0 +1,29 @@
+# OPT-IN overlay: real container labs in the demo stack.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.labs.yml up -d
+#
+# Mounts the host Docker socket into the API and worker so the Docker lab
+# adapter (backend/palestrix/orchestration/docker.py) builds and runs real
+# lab containers on YOUR machine's Docker Engine, with one bridge network
+# per tenant and published ports on localhost.
+#
+# SECURITY: a mounted Docker socket is root-equivalent on the host. That is
+# an acceptable trade on a personal workstation running a local demo; it is
+# NOT acceptable on a shared or internet-reachable machine. Without this
+# overlay the stack uses the built-in demo provider (simulated instances)
+# and mounts nothing.
+services:
+  api:
+    environment:
+      PALESTRIX_DOCKER_ENABLED: "true"
+      # Where the browser reaches published lab ports.
+      PALESTRIX_DOCKER_HOST_ADDRESS: 127.0.0.1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  worker:
+    environment:
+      PALESTRIX_DOCKER_ENABLED: "true"
+      PALESTRIX_DOCKER_HOST_ADDRESS: 127.0.0.1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

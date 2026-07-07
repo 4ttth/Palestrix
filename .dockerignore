@@ -1,0 +1,10 @@
+node_modules
+.next
+.git
+backend/.venv
+backend/palestrix.db
+backend/.objects
+backend/.env
+**/__pycache__
+**/*.egg-info
+PLAN-*.md

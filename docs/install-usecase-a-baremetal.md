@@ -29,7 +29,8 @@ boot guard armed, and (optionally) Canvas LMS wired in.
 13. [Canvas LMS (optional)](#13-canvas-lms-optional)
 14. [Arm the production boot guard](#14-arm-the-production-boot-guard)
 15. [Verify the deployment](#15-verify-the-deployment)
-16. [Troubleshooting](#16-troubleshooting)
+16. [Upgrades](#16-upgrades)
+17. [Troubleshooting](#17-troubleshooting)
 
 ---
 
@@ -141,17 +142,50 @@ POSIX shell. Run commands as root or with `sudo` as shown.
 1. Create a VM on the cluster for the platform services: 8 vCPU, 16 GB RAM,
    100 GB disk, Debian 12 or Ubuntu 24.04, management network.
 
-2. Base packages:
+2. Base packages from the distro archives (Debian 12 ships Python 3.11 and
+   PostgreSQL 15; Ubuntu 24.04 ships Python 3.12 and PostgreSQL 16 — both
+   pairs work; the commands below say `python3`, which resolves to the
+   right one):
 
    ```sh
-   apt update && apt install -y git curl python3.12 python3.12-venv \
-       postgresql-16 redis-server caddy
+   apt update && apt install -y git curl gnupg python3 python3-venv \
+       postgresql redis-server
    ```
 
-   (Caddy: follow <https://caddyserver.com/docs/install> if your distro has
-   no package. Node.js 22: <https://github.com/nodesource/distributions>.)
+3. Node.js 22 (the distro archives are too old for Next.js 15) — NodeSource
+   repository:
 
-3. Create the service user and clone the repository:
+   ```sh
+   curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+   apt install -y nodejs
+   node --version    # v22.x
+   ```
+
+4. Caddy (not in the Debian/Ubuntu archives) — the vendor repository from
+   <https://caddyserver.com/docs/install#debian-ubuntu-raspbian>:
+
+   ```sh
+   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+     | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+     > /etc/apt/sources.list.d/caddy-stable.list
+   apt update && apt install -y caddy
+   ```
+
+5. Docker Engine — required on this VM for **container labs** (the Docker
+   adapter builds teacher archives and runs lab containers here; VM labs
+   run on Proxmox instead). Follow
+   <https://docs.docker.com/engine/install/> for the two-command repo
+   setup, then:
+
+   ```sh
+   apt install -y docker-ce docker-ce-cli containerd.io
+   usermod -aG docker palestrix     # after step 6 creates the user
+   ```
+
+   Skip this only if the site runs VM labs exclusively.
+
+6. Create the service user and clone the repository:
 
    ```sh
    useradd --system --create-home --shell /usr/sbin/nologin palestrix
@@ -237,7 +271,7 @@ POSIX shell. Run commands as root or with `sudo` as shown.
    ```sh
    sudo -u palestrix -s
    cd /home/palestrix/app/backend
-   python3.12 -m venv .venv
+   python3 -m venv .venv
    .venv/bin/pip install -r requirements.txt
    ```
 
@@ -271,6 +305,13 @@ POSIX shell. Run commands as root or with `sudo` as shown.
    PALESTRIX_QUEUE_BACKEND=redis
    PALESTRIX_REDIS_URL=redis://localhost:6379/0
    PALESTRIX_REAPER_ENABLED=true
+
+   # Docker adapter (step 4.5): activates real "container" labs on this VM.
+   PALESTRIX_DOCKER_ENABLED=true
+   # Where students reach published lab ports — this VM's address as seen
+   # from the network the students use (or the public domain when labs are
+   # proxied).
+   PALESTRIX_DOCKER_HOST_ADDRESS=10.0.10.20
 
    # Proxmox adapter (step 3.5): activates the "vm" lab kind.
    PALESTRIX_PROXMOX_HOST=https://pve-01.internal:8006
@@ -318,12 +359,16 @@ POSIX shell. Run commands as root or with `sudo` as shown.
    [Service]
    User=palestrix
    WorkingDirectory=/home/palestrix/app/backend
-   ExecStart=/home/palestrix/app/backend/.venv/bin/uvicorn palestrix.main:app --host 127.0.0.1 --port 8000 --workers 4
+   ExecStart=/home/palestrix/app/backend/.venv/bin/uvicorn palestrix.main:app --host 127.0.0.1 --port 8000 --workers 4 --proxy-headers --forwarded-allow-ips 127.0.0.1
    Restart=on-failure
 
    [Install]
    WantedBy=multi-user.target
    ```
+
+   (`--proxy-headers` makes the API see real client addresses through
+   Caddy instead of `127.0.0.1` — audit logs and any per-IP controls depend
+   on it.)
 
    And `/etc/systemd/system/palestrix-worker.service` (consumes provisioning
    jobs and owns the TTL reaper + grade-passback retries):
@@ -569,7 +614,29 @@ Abbreviated:
 - [ ] Canvas (if wired): roster sync, deep-linked launch, grade passback
       round trip.
 
-## 16. Troubleshooting
+## 16. Upgrades
+
+Schema changes are additive and run automatically at API startup
+(`palestrix/migrations.py`), so an upgrade is: pull, rebuild, restart —
+in that order, API before worker.
+
+```sh
+sudo -u palestrix -s
+cd /home/palestrix/app
+git pull
+backend/.venv/bin/pip install -r backend/requirements.txt
+npm ci && npm run build
+exit
+systemctl restart palestrix-api palestrix-worker palestrix-frontend
+curl -s http://127.0.0.1:8000/healthz    # {"ok":true} before walking away
+```
+
+Take a database dump first (the step 5 cron makes nightly ones; run it by
+hand before an upgrade: `sudo -u postgres pg_dump palestrix | gzip >
+/root/pre-upgrade.sql.gz`). If the API refuses to start after an upgrade,
+the boot guard names the new requirement in `journalctl -u palestrix-api`.
+
+## 17. Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
