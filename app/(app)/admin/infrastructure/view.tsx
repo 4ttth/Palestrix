@@ -10,7 +10,7 @@
  */
 
 import { useRef, useState, type FormEvent } from "react";
-import { Cpu, HardDrives, UploadSimple } from "@phosphor-icons/react";
+import { Cpu, HardDrives, Plugs, UploadSimple } from "@phosphor-icons/react";
 import { Topbar } from "@/components/shell/topbar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -31,9 +31,11 @@ import { useApi, type Async } from "@/lib/api/hooks";
 import { useSession } from "@/lib/api/session";
 import { bytes, dateOnly } from "@/lib/format";
 import { stateLabel } from "@/lib/labels";
+import { cn } from "@/lib/utils";
 import type {
   CloudOut,
   InstanceOut,
+  ProviderCheckOut,
   ProviderOut,
   StoredObjectOut,
   TenantOut,
@@ -128,34 +130,7 @@ export function InfrastructureView() {
         )}
         <div className="grid gap-4 lg:grid-cols-3">
           {(providers.data ?? []).map((p) => (
-            <Card key={p.name}>
-              <CardHeader className="flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="font-mono">{p.name}</CardTitle>
-                  <CardDescription>Instance provider</CardDescription>
-                </div>
-                <Badge variant="running">active</Badge>
-              </CardHeader>
-              <CardContent>
-                <dl className="grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <dt className="text-[11px] text-muted">Kinds</dt>
-                    <dd className="font-mono text-[13px]">{p.kinds.join(", ")}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-[11px] text-muted">Live instances</dt>
-                    <dd className="font-mono tabular-nums">{p.instances_active}</dd>
-                  </div>
-                </dl>
-                {p.name === "demo" && (
-                  <p className="mt-3 flex items-start gap-2 text-[13px] leading-relaxed text-muted">
-                    <Cpu size={15} className="mt-0.5 shrink-0" />
-                    Development placeholder. Proxmox and Docker adapters take
-                    over their kinds when configured (backend/README.md).
-                  </p>
-                )}
-              </CardContent>
-            </Card>
+            <ProviderCard key={p.name} provider={p} />
           ))}
         </div>
 
@@ -300,6 +275,86 @@ export function InfrastructureView() {
         </div>
       </div>
     </>
+  );
+}
+
+/*
+ * One instance provider with its connectivity self-test: the button
+ * round-trips the provider's backing system (Proxmox API with the
+ * configured token, docker daemon) and prints the real outcome — Proxmox's
+ * own 401/403 line when auth is wrong — so failed launches are diagnosable
+ * without reading worker logs.
+ */
+function ProviderCard({ provider: p }: { provider: ProviderOut }) {
+  const [checking, setChecking] = useState(false);
+  const [result, setResult] = useState<ProviderCheckOut | null>(null);
+
+  async function runCheck() {
+    setChecking(true);
+    setResult(null);
+    try {
+      setResult(
+        await api.post<ProviderCheckOut>(`/api/v1/admin/providers/${p.name}/check`)
+      );
+    } catch (err) {
+      setResult({
+        name: p.name,
+        ok: false,
+        detail: err instanceof ApiError ? err.message : "The check failed.",
+      });
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between">
+        <div>
+          <CardTitle className="font-mono">{p.name}</CardTitle>
+          <CardDescription>Instance provider</CardDescription>
+        </div>
+        <Badge variant="running">active</Badge>
+      </CardHeader>
+      <CardContent>
+        <dl className="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <dt className="text-[11px] text-muted">Kinds</dt>
+            <dd className="font-mono text-[13px]">{p.kinds.join(", ")}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] text-muted">Live instances</dt>
+            <dd className="font-mono tabular-nums">{p.instances_active}</dd>
+          </div>
+        </dl>
+        {p.name === "demo" && (
+          <p className="mt-3 flex items-start gap-2 text-[13px] leading-relaxed text-muted">
+            <Cpu size={15} className="mt-0.5 shrink-0" />
+            Development placeholder. Proxmox and Docker adapters take
+            over their kinds when configured (backend/README.md).
+          </p>
+        )}
+        <div className="mt-4 space-y-2 border-t border-border pt-3">
+          <Button variant="outline" size="sm" disabled={checking} onClick={runCheck}>
+            <Plugs size={15} />
+            {checking ? "Testing..." : "Test connection"}
+          </Button>
+          {result && (
+            <p
+              aria-live="polite"
+              className={cn(
+                "rounded-(--radius-input) px-3 py-2 font-mono text-[11px] leading-relaxed break-words",
+                result.ok
+                  ? "bg-running-soft text-running"
+                  : "bg-expired-soft text-expired"
+              )}
+            >
+              {result.detail}
+            </p>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

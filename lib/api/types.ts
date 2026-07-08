@@ -281,6 +281,13 @@ export type ProviderOut = {
   instances_active: number;
 };
 
+/** POST /admin/providers/{name}/check — provider connectivity self-test. */
+export type ProviderCheckOut = {
+  name: string;
+  ok: boolean;
+  detail: string;
+};
+
 // -- plugins (superadmin console) ---------------------------------------------
 
 export type PluginOut = {

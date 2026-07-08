@@ -583,6 +583,14 @@ class ProviderOut(BaseModel):
     instances_active: int = 0
 
 
+class ProviderCheckOut(BaseModel):
+    """Result of a provider connectivity self-test (admin console)."""
+
+    name: str
+    ok: bool
+    detail: str
+
+
 # -- plugins ------------------------------------------------------------------
 
 

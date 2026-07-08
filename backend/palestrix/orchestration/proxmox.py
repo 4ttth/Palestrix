@@ -233,6 +233,20 @@ class ProxmoxProvider:
         self._remove_vmid(int(vm["vmid"]))
         add_log(db, instance.id, "vm: stopped and destroyed", level="warn")
 
+    def check(self) -> str:
+        """Connectivity self-test for the admin console: round-trips the API
+        with the configured token and node — the exact auth the provisioner
+        uses — and reports what it can see. Raises ProxmoxError carrying
+        Proxmox's own status line (401 invalid token, 403 permission check
+        failed, ...) so the console can show the real reason."""
+        version = self._get("/version") or {}
+        vms = self._get(f"/nodes/{self._node}/qemu") or []
+        templates = sum(1 for vm in vms if vm.get("template"))
+        return (
+            f"Proxmox VE {version.get('version', '?')} reachable; "
+            f"node {self._node}: {len(vms)} VMs visible, {templates} templates"
+        )
+
     def upload_iso(self, filename: str, data) -> str:
         """Forward an admin-uploaded ISO to the cluster's ISO storage
         (``POST /nodes/{node}/storage/{storage}/upload``), so templates can

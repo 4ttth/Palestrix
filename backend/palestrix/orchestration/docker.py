@@ -61,6 +61,13 @@ class DockerProvider:
     def __init__(self, runner: Runner | None = None) -> None:
         self._run = runner or _subprocess_runner
 
+    def check(self) -> str:
+        """Connectivity self-test for the admin console: asks the daemon for
+        its version over the same CLI path provisioning uses. Raises
+        DockerError with the CLI's stderr when the daemon is unreachable."""
+        version = self._run(["version", "--format", "{{.Server.Version}}"]).strip()
+        return f"docker daemon reachable, server version {version or 'unknown'}"
+
     # -- helpers ---------------------------------------------------------------
 
     def _container_for(self, instance_id: str) -> str | None:

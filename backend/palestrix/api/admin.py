@@ -241,6 +241,33 @@ def list_providers(
     return out
 
 
+@router.post("/providers/{name}/check", response_model=schemas.ProviderCheckOut)
+def check_provider(
+    name: str,
+    principal: Principal = Depends(require_capability("infra:manage")),
+):
+    """Round-trip the named provider's backing system with the credentials
+    the provisioner uses (Proxmox API token, docker daemon) and report the
+    real outcome — the console's answer to "why do launches fail?" without
+    reading worker logs. Providers with nothing external behind them (demo,
+    plugin registries) report ok with a note."""
+    for provider in active_providers():
+        if provider.name != name:
+            continue
+        probe = getattr(provider, "check", None)
+        if not callable(probe):
+            return schemas.ProviderCheckOut(
+                name=name,
+                ok=True,
+                detail="registry-only provider; nothing external to check",
+            )
+        try:
+            return schemas.ProviderCheckOut(name=name, ok=True, detail=probe())
+        except Exception as exc:
+            return schemas.ProviderCheckOut(name=name, ok=False, detail=str(exc))
+    raise HTTPException(status.HTTP_404_NOT_FOUND, "no active provider by that name")
+
+
 @router.post("/reaper/run")
 def run_reaper(
     background: BackgroundTasks,
