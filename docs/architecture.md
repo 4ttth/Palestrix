@@ -16,9 +16,9 @@ documents in this folder go deep on each subsystem.
 4. **API-first.** Every function the UI performs exists as a versioned REST
   endpoint first (see public-api.md). Plugins and external tools consume the
    same contract.
-5. **Deployable two ways.** On owned baremetal behind a public IP or domain
-  (usecase-a-baremetal.md), or on cloud services with generic and AWS
-   names side by side (usecase-b-cloud-aws.md).
+5. **Deployable two ways.** On a single Proxmox VE workstation you own, behind
+  a public IP or domain (usecase-a-baremetal.md), or on cloud services with
+   generic and AWS names side by side (usecase-b-cloud-aws.md).
 
 
 
@@ -55,8 +55,12 @@ documents in this folder go deep on each subsystem.
                               +----------+----------+          +-----------+-----------+
                                          |                                 |
                               +----------v---------------------------------v----------+
-                              |  Multitenant cloud layer: OpenNebula OR CloudStack    |
-                              |  (tenants, quotas, VDC/domain isolation)              |
+                              |  Tenancy (Phase 7): registry-driven LocalCloud —      |
+                              |  VLAN tag + /24 per tenant, isolated by the adapters  |
+                              |  above (Proxmox VLAN-aware bridge / Docker subnet).   |
+                              |  Optional managed-cloud adapters (OpenNebula,         |
+                              |  CloudStack) front a hypervisor fleet; not used on    |
+                              |  a single Proxmox workstation (usecase-a-baremetal.md).|
                               +-------------------------------------------------------+
 
    Separate, network-isolated:  +---------------------------+
@@ -118,29 +122,32 @@ Docker (image build from teacher archives, compose stacks). The TTL reaper is
 a scheduled worker that scans for expired instances, stops and destroys them,
 and releases tenant quota. Full state machine in ephemeral-lifecycle.md.
 
-### Multitenant cloud layer
+### Tenancy
 
-Proxmox VE is the hypervisor base. For multitenancy (per-class isolation,
-quotas, self-service within limits) the deployment fronts it with either
-OpenNebula (VDCs and groups) or Apache CloudStack (domains and accounts).
-Both are documented in usecase-a-baremetal.md; pick one per site.
+Proxmox VE is the hypervisor base, and on the reference deployment — a single
+Proxmox VE workstation (usecase-a-baremetal.md) — it is the *only*
+infrastructure. Multitenancy (per-class isolation, quotas, naming) is driven
+entirely by PalestrIX's own registry: no external manager is required.
 
 Implemented in Phase 7 (`backend/palestrix/tenancy/`) behind a `TenantCloud`
 contract that mirrors the Phase 4 provider and Phase 6 detonator registries:
 `ensure_tenant` on create, `sync_quota` on quota edits, `retire_tenant` on
 archive — all idempotent, all called only by the admin API. The built-in
-`LocalCloud` does registry-side allocation (a VLAN tag from
-`PALESTRIX_TENANT_VLAN_MIN..MAX`, a /24 carved from
+`LocalCloud` (the default, `PALESTRIX_CLOUD_BACKEND=local`) does registry-side
+allocation (a VLAN tag from `PALESTRIX_TENANT_VLAN_MIN..MAX`, a /24 carved from
 `PALESTRIX_TENANT_CIDR_POOL`), which the Phase 4 adapters turn into real
-isolation: Proxmox tags `net0` with the tenant VLAN on the trunk bridge,
-Docker pins the tenant bridge to the tenant CIDR. Setting
-`PALESTRIX_CLOUD_BACKEND=opennebula|cloudstack` swaps in an adapter that
-additionally materializes each tenant in that manager — group + VDC +
+isolation: Proxmox tags `net0` with the tenant VLAN on the host's VLAN-aware
+bridge (no external switch on a single box), Docker pins the tenant bridge to
+the tenant CIDR. The API enforces all three tenant quotas (instances, vCPU,
+RAM) at launch; archived tenants keep their row, VLAN, and CIDR forever
+(ephemeral-lifecycle.md §Multitenancy invariants).
+
+For a site that instead fronts a hypervisor *fleet* with a self-service IaaS
+manager, `PALESTRIX_CLOUD_BACKEND=opennebula|cloudstack` swaps in an adapter
+that additionally materializes each tenant in that manager — group + VDC +
 VLAN-backed virtual network, or domain + account + isolated network — and
-pushes quota edits through. The API enforces all three tenant quotas
-(instances, vCPU, RAM) at launch either way; archived tenants keep their
-row, VLAN, and CIDR forever (ephemeral-lifecycle.md §Multitenancy
-invariants).
+pushes quota edits through, on the same contract. Those adapters are optional
+and are not used on the single-workstation deployment.
 
 ### Deployment hardening
 
@@ -169,6 +176,24 @@ detonator (real static pre-check, simulated dynamic trace) and a coordinator
 adapter for the isolated host; verdict + MITRE mapping; an SSE behavior-event
 stream; samples and reports sealed at rest. See sandbox-security.md
 §Implementation status and public-api.md §Sandbox surface.
+
+### External integrations
+
+Implemented in Phase 8 (`backend/palestrix/integrations/`) behind an
+`ExternalPlatform` contract that mirrors the Phase 4/6/7 registries: nothing
+answers by default, and `activate_configured_platforms` (called from the API
+lifespan and the worker) registers whichever adapters the environment
+configures — Canvas LMS is the reference adapter, so the next platform
+(Moodle, Google Classroom) follows the same path. Adapters are pure platform
+clients; the API owns the registry rows, the same split as `TenantCloud`.
+Three flows ride the contract: LTI 1.3 launch with identity mapping by
+`sub`+issuer (an unmapped identity claims an account by asserted e-mail, or
+lands on an "ask your teacher to sync" page — never silent creation), NRPS
+roster sync that pre-provisions and un-enrolls only the students this
+platform mapped, and an AGS grade-passback queue that delivers on the reaper
+heartbeat with exponential backoff and parks exhausted rows as `failed` for
+a manual retry in the teacher's course panel. Full contract in
+integrations-canvas-lms.md and public-api.md §Integrations surface.
 
 ### Storage
 

@@ -352,8 +352,8 @@ export default function LandingPage() {
                 <div>
                   <dt className="font-medium">Your own metal</dt>
                   <dd className="mt-1 leading-relaxed text-muted">
-                    Proxmox VE plus OpenNebula or CloudStack, published under
-                    your public IP or domain.
+                    One Proxmox VE workstation runs the platform and the labs,
+                    published under your public IP or domain.
                   </dd>
                 </div>
                 <div>

@@ -189,6 +189,34 @@ class ProxmoxProvider:
             level="ok",
         )
 
+    def read_files(self, db, instance, paths: list[str]) -> dict[str, str | None]:
+        """Automated-checking probe: read files through the QEMU guest agent
+        (``agent/file-read``, the same agent that reports the VM's address)
+        and hash the content locally. A path the agent cannot read — missing
+        file, unreadable — reads as absent; a VM that is gone is an error."""
+        import hashlib
+
+        vm = self._vm_by_name(instance.id)
+        if vm is None:
+            raise ProxmoxError("vm not found for grading probe")
+        observed: dict[str, str | None] = {}
+        for path in paths:
+            try:
+                data = self._get(
+                    f"/nodes/{self._node}/qemu/{vm['vmid']}/agent/file-read"
+                    f"?file={quote(path, safe='')}"
+                )
+            except ProxmoxError:
+                observed[path] = None
+                continue
+            content = (data or {}).get("content")
+            observed[path] = (
+                hashlib.sha256(content.encode()).hexdigest()
+                if content is not None
+                else None
+            )
+        return observed
+
     def stop(self, db, instance) -> None:
         vm = self._vm_by_name(instance.id)
         if vm is None:

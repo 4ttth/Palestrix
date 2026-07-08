@@ -90,6 +90,7 @@ export type LabTemplateOut = {
   ttl_minutes_max: number;
   cpu: number;
   ram_gb: number;
+  owner_id: string;
 };
 
 export type InstanceOut = {
@@ -367,4 +368,70 @@ export type GradePassbackOut = {
   delivered_at: string | null;
   student_handle: string;
   assignment_title: string;
+};
+
+// -- automated checking (grading) ----------------------------------------------
+
+export type RubricItemOut = {
+  id: string;
+  key: string;
+  title: string;
+  detail: string;
+  weight_percent: number;
+  position: number;
+  paths: string[];
+  win_filename: string | null;
+};
+
+export type GradingSchemeOut = {
+  id: string;
+  lab_template_id: string;
+  kind: "diff" | "winfile";
+  status: "draft" | "published";
+  analysis: {
+    differences?: number;
+    changes?: { path: string; change: "added" | "modified" | "removed" }[];
+  };
+  items: RubricItemOut[];
+  created_at: string;
+  published_at: string | null;
+};
+
+export type RubricItemPublic = {
+  key: string;
+  title: string;
+  weight_percent: number;
+};
+
+export type GradeCheckItem = {
+  key: string;
+  title: string;
+  weight_percent: number;
+  passed: boolean;
+};
+
+export type GradeCheckOut = {
+  id: string;
+  instance_id: string;
+  total_percent: number;
+  trigger: "student" | "stop" | "destroy" | "reaper";
+  items: GradeCheckItem[];
+  created_at: string;
+};
+
+export type InstanceGradingOut = {
+  scheme_kind: "diff" | "winfile" | null;
+  scheme_status: string | null;
+  rubric: RubricItemPublic[];
+  result: GradeCheckOut | null;
+};
+
+export type GradebookRowOut = {
+  submission_id: string;
+  user_id: string;
+  handle: string;
+  name: string;
+  grade: number | null;
+  submitted_at: string;
+  auto: GradeCheckOut | null;
 };

@@ -297,6 +297,84 @@ class InstanceLog(Base):
 
 
 # --------------------------------------------------------------------------
+# Automated checking (grading). A rubric attached to a lab template: the
+# checker (palestrix/grading/) fills it from a real artifact diff or from
+# generated win files, the teacher weights it to exactly 100%, and every
+# student instance is scored against it at hand-in, stop, destroy, or TTL
+# expiry — whichever comes first (docs/automated-checking.md).
+# --------------------------------------------------------------------------
+
+
+class GradingScheme(Base):
+    """One rubric per lab template. ``diff`` schemes carry the finished
+    reference artifact (the template's own archive is the unfinished system
+    students receive); ``winfile`` schemes carry generated win scripts the
+    teacher embeds and students must find and execute. Weights are editable
+    while ``draft``; ``published`` locks the rubric and turns grading on."""
+
+    __tablename__ = "grading_schemes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    lab_template_id: Mapped[str] = mapped_column(
+        ForeignKey("lab_templates.id"), unique=True, index=True
+    )
+    kind: Mapped[str] = mapped_column(String(16))  # diff|winfile
+    status: Mapped[str] = mapped_column(String(16), default="draft")  # draft|published
+    finished_archive_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # winfile mode: the randomized directory the win scripts write their
+    # execution markers into. Random per scheme so markers can't be guessed
+    # without finding a script.
+    marker_dir: Mapped[str] = mapped_column(String(128), default="")
+    analysis: Mapped[dict] = mapped_column(JSON, default=dict)  # diff summary
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class RubricItem(Base):
+    """One gradeable objective. ``checks`` is the machine half the student
+    never sees: for diff items a list of file expectations
+    (``{"path", "sha256", "present"}``) taken from the finished system; for
+    winfile items the marker path and the SHA-256 of the token the win
+    script writes when executed."""
+
+    __tablename__ = "rubric_items"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    scheme_id: Mapped[str] = mapped_column(ForeignKey("grading_schemes.id"), index=True)
+    key: Mapped[str] = mapped_column(String(64))  # ssh, motd, win-1, ...
+    title: Mapped[str] = mapped_column(String(256))
+    detail: Mapped[str] = mapped_column(Text, default="")
+    weight_percent: Mapped[int] = mapped_column(Integer, default=0)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    checks: Mapped[dict] = mapped_column(JSON, default=dict)
+    storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)  # win script
+
+
+class GradeCheck(Base):
+    """One grading run of one instance against its template's scheme.
+    ``items`` is the student-safe breakdown (key, title, weight, passed);
+    ``total_percent`` is the sum of passed weights. ``submission_id`` links
+    the course submission the grade was written to, when one exists."""
+
+    __tablename__ = "grade_checks"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
+    scheme_id: Mapped[str] = mapped_column(ForeignKey("grading_schemes.id"), index=True)
+    instance_id: Mapped[str] = mapped_column(ForeignKey("instances.id"), index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    submission_id: Mapped[str | None] = mapped_column(
+        ForeignKey("submissions.id"), nullable=True
+    )
+    total_percent: Mapped[int] = mapped_column(Integer, default=0)
+    items: Mapped[list] = mapped_column(JSON, default=list)
+    trigger: Mapped[str] = mapped_column(String(16), default="student")  # student|stop|destroy|reaper
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# --------------------------------------------------------------------------
 # Gamification (append-only ledger + streak state; rules in gamification.py)
 # --------------------------------------------------------------------------
 

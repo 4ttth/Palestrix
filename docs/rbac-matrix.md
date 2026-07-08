@@ -19,12 +19,15 @@ Legend: Y = allowed, O = only own/enrolled resources, - = denied.
 | Launch labs from enrolled courses | O | Y | Y | Y |
 | Extend own instance TTL (spends Palestras) | O | Y | Y | Y |
 | Stop/destroy own instance | O | O | Y | Y |
+| Submit own lab for automated checking, see own rubric | O | O | O | O |
 | **Courses** |
 | Enroll in courses | O | - | - | - |
 | Create/edit courses and assignments | - | O | - | Y |
 | Upload assignment files (basic) | - | Y | Y | Y |
 | Publish live environments (advanced: Dockerfile, VM, TTL, tenancy) | - | Y | Y | Y |
-| Grade submissions, view rosters | - | O | - | Y |
+| Grade submissions, view rosters, gradebook | - | O | - | Y |
+| Attach autograding rubrics, publish, weight (own templates) | - | O | - | Y |
+| Download win files for own lab templates | - | O | - | Y |
 | **Community** |
 | Publish writeups, comment, vote | Y | Y | Y | Y |
 | Moderate community content | - | O (own course forums) | Y | Y |

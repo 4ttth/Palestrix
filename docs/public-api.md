@@ -26,7 +26,8 @@ the account that issued it.
 /api/v1/courses       courses, enrollment, assignments, submissions, grades
 /api/v1/academy       paths, modules, completion, certification state
 /api/v1/labs          lab templates (teacher publishing, incl. archives)
-/api/v1/instances     ephemeral instances: launch, state, extend, destroy
+/api/v1/grading       automated-checking rubrics (schemes, weights, win files)
+/api/v1/instances     ephemeral instances: launch, state, extend, destroy, grade
 /api/v1/gamification  Palestras ledger, balances, streaks, leaderboards
 /api/v1/community     writeups, comments, votes, community score
 /api/v1/compete       events, challenges, flag submission, first blood
@@ -34,6 +35,8 @@ the account that issued it.
 /api/v1/admin         tenants, quotas, nodes, ISO library, reaper controls
 /api/v1/plugins       registry, enablement, plugin config (superadmin)
 /api/v1/webhooks      subscription management
+/api/v1/integrations  external-platform links (LTI launch/JWKS, roster sync,
+                      grade passback queue)
 ```
 
 ## Display enrichment (Phase 5)
@@ -95,7 +98,7 @@ GET    /api/v1/admin/cloud               the active cloud layer (local |
 ```
 
 `POST /api/v1/admin/isos` stores the ISO in object storage and — while the
-Proxmox adapter owns the "vm" kind — forwards it to the cluster's ISO storage
+Proxmox adapter owns the "vm" kind — forwards it to the Proxmox ISO storage
 (`PALESTRIX_PROXMOX_ISO_STORAGE`), returning
 `{ "stored": "isos/kali.iso", "forwarded_to": "local:iso/kali.iso" }`; a
 forwarding failure keeps the object-storage copy and reports `forward_error`
@@ -193,6 +196,62 @@ is one of `unknown|clean|suspicious|malicious`; `state` moves
 `sandbox.report.ready` on the event bus (below). When the module is disabled
 the whole surface answers `501`.
 
+## Integrations surface (Phase 8)
+
+External platforms plug in behind the `ExternalPlatform` contract
+(docs/integrations-canvas-lms.md); Canvas LMS is the reference adapter. Two
+trust models share the `/integrations` prefix:
+
+```
+GET  /api/v1/integrations/platforms       active platforms (id, name, issuer,
+                                          features). Requires a session —
+                                          nothing else on this surface does
+
+GET  /canvas/jwks                        the tool's public keyset Canvas pins
+GET/POST /canvas/login                   OIDC third-party initiation -> 302 to
+                                          Canvas with a signed state + nonce
+POST /canvas/launch                      validates the id_token; a resource
+                                          launch hands the browser a session,
+                                          a deep-linking launch renders the
+                                          lab picker. 401 on a bad signature,
+                                          unknown nonce, or a replayed one
+POST /canvas/deep-link                   picker submission -> signed
+                                          LtiDeepLinkingResponse auto-posted
+                                          back to Canvas
+```
+
+The four `canvas/*` routes are public by protocol — the browser arrives
+carrying platform- or PalestrIX-signed tokens, and those signatures are the
+authentication, not a session. Everything below is ordinary authenticated
+API, teacher-owned like `/courses` (`courses:write` + course ownership):
+
+```
+POST   /api/v1/integrations/links               link a course to a platform
+GET    /api/v1/integrations/links?course_id=     list links (own courses,
+                                                 all for admin/superadmin),
+                                                 each with pending/delivered/
+                                                 failed grade counts
+DELETE /api/v1/integrations/links/{id}           unlink. Mapped identities and
+                                                 delivered receipts stay
+POST   /api/v1/integrations/links/{id}/sync      pull the roster now; returns
+                                                 {roster, added, provisioned,
+                                                 removed, skipped}. Fires
+                                                 roster.synced
+GET    /api/v1/integrations/links/{id}/grades    the link's grade-passback
+                                                 queue, newest first
+POST   /api/v1/integrations/grades/{id}/retry    requeue a failed row and
+                                                 attempt delivery immediately;
+                                                 409 if already delivered
+```
+
+Grade passback is queued right after a teacher grades a submission (one row
+per linked platform the student is mapped on and whose assignment has a
+bound AGS line item), then delivered asynchronously — immediately as a
+background task and again on every reaper heartbeat — with exponential
+backoff (`2^attempts` minutes) up to `PALESTRIX_GRADE_PASSBACK_MAX_ATTEMPTS`,
+after which the row parks as `failed` for a manual retry. Delivery fires
+`grade.delivered`.
+
 ## Webhooks
 
 Subscriptions are per-account, scoped, and signed (HMAC-SHA256 over the body
@@ -208,6 +267,8 @@ retry with exponential backoff for 24 hours.
 | `grade.posted` | A teacher grades a submission |
 | `writeup.published` | A community writeup goes live |
 | `sandbox.report.ready` | A detonation report is complete |
+| `roster.synced` | A linked course's roster sync completes |
+| `grade.delivered` | A queued grade passback is delivered to the platform |
 
 The same events flow on an internal bus consumed by UI live updates and by
 plugins (`on_event`, see plugin-development.md); webhooks are the external

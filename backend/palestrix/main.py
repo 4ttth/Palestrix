@@ -23,6 +23,7 @@ from .api import (
     compete,
     courses,
     gamification,
+    grading,
     instances,
     integrations,
     labs,
@@ -140,6 +141,7 @@ def create_app() -> FastAPI:
     api.include_router(courses.router)
     api.include_router(academy.router)
     api.include_router(labs.router)
+    api.include_router(grading.router)
     api.include_router(instances.router)
     api.include_router(gamification.router)
     api.include_router(community.router)

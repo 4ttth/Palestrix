@@ -176,6 +176,7 @@ class LabTemplateOut(ORMModel):
     ttl_minutes_max: int
     cpu: int
     ram_gb: int
+    owner_id: str
 
 
 class InstanceCreateIn(BaseModel):
@@ -212,6 +213,78 @@ class InstanceLogOut(ORMModel):
 
 class ExtendIn(BaseModel):
     minutes: int = Field(default=30, ge=15, le=120)
+
+
+# -- automated checking (grading) ---------------------------------------------------
+
+
+class RubricItemOut(ORMModel):
+    """Teacher view of one objective. ``paths`` summarizes what the checker
+    will inspect; the expected hashes stay server-side."""
+
+    id: str
+    key: str
+    title: str
+    detail: str
+    weight_percent: int
+    position: int
+    paths: list[str] = []
+    win_filename: str | None = None
+
+
+class RubricItemPublicOut(BaseModel):
+    """Student view: the rubric they are graded on, never the answers —
+    no paths, no marker locations, no hashes."""
+
+    key: str
+    title: str
+    weight_percent: int
+
+
+class GradingSchemeOut(ORMModel):
+    id: str
+    lab_template_id: str
+    kind: str
+    status: str
+    analysis: dict = {}
+    items: list[RubricItemOut] = []
+    created_at: datetime
+    published_at: datetime | None = None
+
+
+class GradingWeightsIn(BaseModel):
+    weights: dict[str, int]  # rubric item id -> percent
+
+
+class GradeCheckOut(ORMModel):
+    id: str
+    instance_id: str
+    total_percent: int
+    trigger: str
+    items: list = []
+    created_at: datetime
+
+
+class InstanceGradingOut(BaseModel):
+    """What a student sees on their lab page: the rubric (if the template is
+    auto-graded) and their latest result (if a check has run)."""
+
+    scheme_kind: str | None = None
+    scheme_status: str | None = None
+    rubric: list[RubricItemPublicOut] = []
+    result: GradeCheckOut | None = None
+
+
+class GradebookRowOut(BaseModel):
+    """One student row in the teacher's per-assignment gradebook."""
+
+    submission_id: str
+    user_id: str
+    handle: str
+    name: str
+    grade: int | None
+    submitted_at: datetime
+    auto: GradeCheckOut | None = None
 
 
 # -- gamification --------------------------------------------------------------------

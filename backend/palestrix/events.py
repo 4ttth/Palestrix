@@ -34,6 +34,7 @@ EVENT_TYPES = {
     "palestras.changed",
     "grade.posted",
     "grade.delivered",
+    "grading.result.ready",
     "roster.synced",
     "writeup.published",
     "sandbox.report.ready",

@@ -46,6 +46,12 @@ def reap_expired(db: Session, *, now: datetime | None = None) -> list[str]:
         if instance.expires_at is None or as_utc(instance.expires_at) > now:
             continue
         add_log(db, instance.id, "reaper: TTL hit, stopping and destroying", level="warn")
+        # Auto-graded labs: time up is a hand-in. Grade while the box still
+        # exists; a checker failure never blocks the reap (autograde_if_due
+        # swallows it and logs to the instance).
+        from .. import grading
+
+        grading.autograde_if_due(db, instance, trigger="reaper")
         template = db.get(LabTemplate, instance.template_id)
         provider = provider_for_kind(template.kind) if template else None
         if provider is None:

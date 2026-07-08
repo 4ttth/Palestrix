@@ -23,7 +23,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { UploadPanel } from "@/components/course/upload-panel";
+import { AutogradePanel } from "@/components/course/autograde-panel";
 import { CanvasPanel } from "@/components/course/canvas-panel";
+import { Gradebook } from "@/components/course/gradebook";
 import { Empty, LoadFailed, Loading } from "@/components/ui/async";
 import { api, ApiError } from "@/lib/api/client";
 import { useApi } from "@/lib/api/hooks";
@@ -256,10 +258,15 @@ export function CoursesView() {
                     void courses.refetch();
                   }}
                 />
+                <AutogradePanel />
                 <CanvasPanel course={selected} />
               </div>
             )}
           </div>
+        )}
+
+        {selected && isTeacher && assignments.data && (
+          <Gradebook course={selected} assignments={assignments.data} />
         )}
       </div>
     </>

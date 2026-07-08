@@ -171,6 +171,53 @@ def upload_assignment_file(
     return _assignment_out(db, assignment)
 
 
+@router.get(
+    "/{course_id}/assignments/{assignment_id}/submissions",
+    response_model=list[schemas.GradebookRowOut],
+)
+def gradebook(
+    course_id: str,
+    assignment_id: str,
+    principal: Principal = Depends(require_capability("courses:grade")),
+    db: Session = Depends(get_db),
+):
+    """The teacher's per-assignment gradebook: every submission with its
+    grade and, for auto-graded labs, the checker's objective-by-objective
+    breakdown behind that grade."""
+    from ..models import GradeCheck
+
+    course = _course_or_404(db, course_id)
+    _require_course_teacher(principal, course)
+    assignment = db.get(Assignment, assignment_id)
+    if assignment is None or assignment.course_id != course_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such assignment")
+    rows = db.execute(
+        select(Submission, User)
+        .join(User, User.id == Submission.user_id)
+        .where(Submission.assignment_id == assignment_id)
+        .order_by(Submission.submitted_at)
+    ).all()
+    out = []
+    for submission, student in rows:
+        auto = db.scalar(
+            select(GradeCheck)
+            .where(GradeCheck.submission_id == submission.id)
+            .order_by(GradeCheck.created_at.desc(), GradeCheck.id.desc())
+        )
+        out.append(
+            schemas.GradebookRowOut(
+                submission_id=submission.id,
+                user_id=student.id,
+                handle=student.handle,
+                name=student.name,
+                grade=submission.grade,
+                submitted_at=submission.submitted_at,
+                auto=schemas.GradeCheckOut.model_validate(auto) if auto else None,
+            )
+        )
+    return out
+
+
 @router.post(
     "/{course_id}/assignments/{assignment_id}/submissions",
     response_model=schemas.SubmissionOut,
