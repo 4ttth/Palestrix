@@ -167,7 +167,7 @@ export function DashboardView() {
   return (
     <>
       <Topbar title="Dashboard" />
-      <div className="space-y-6 p-6">
+      <div className="space-y-6 p-4 sm:p-6">
         {/* Active instance strip: the most time-critical object on screen */}
         {instances.loading && <Loading label="checking instances" />}
         {instances.error && (

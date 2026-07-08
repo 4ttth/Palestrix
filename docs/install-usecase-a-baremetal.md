@@ -295,6 +295,11 @@ the management network, never on a tenant VLAN.
    PALESTRIX_TENANT_VLAN_MIN=100
    PALESTRIX_TENANT_VLAN_MAX=1999
    PALESTRIX_TENANT_CIDR_POOL=10.24.0.0/16
+   # Auto tenancy: new self-registered accounts join this tenant. Unset,
+   # the sole active tenant (when exactly one exists) is used instead;
+   # otherwise accounts start unassigned and an admin places them in
+   # Admin -> Users.
+   PALESTRIX_DEFAULT_TENANT_ID=hau-bscs-3a
    ```
 
    > **Note** — production TLS to Proxmox needs a real certificate on the host;

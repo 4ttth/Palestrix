@@ -84,6 +84,11 @@ class Settings(BaseSettings):
     # materializes every tenant in that manager (group/VDC or domain/account,
     # quotas, and the tenant network). Pick one per site.
     cloud_backend: str = "local"  # "local" | "opennebula" | "cloudstack"
+    # Auto tenancy for self-registration: new accounts join this tenant.
+    # Empty falls back to "the sole active tenant, if exactly one exists"
+    # (the single-class deployment), else the account starts unassigned and
+    # an admin assigns it from the users console.
+    default_tenant_id: str = ""
     tenant_vlan_min: int = 100
     tenant_vlan_max: int = 1999
     tenant_cidr_pool: str = "10.24.0.0/16"  # carved into /24s per tenant

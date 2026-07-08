@@ -27,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Empty, LoadFailed, Loading } from "@/components/ui/async";
+import { AuthorPanel } from "@/components/compete/author-panel";
 import { api, ApiError } from "@/lib/api/client";
 import { useApi } from "@/lib/api/hooks";
 import { useSession } from "@/lib/api/session";
@@ -117,16 +118,34 @@ export function CompeteView() {
     }
   }
 
+  const isAuthor =
+    user.role === "teacher" || user.role === "admin" || user.role === "superadmin";
+
   return (
     <>
       <Topbar title="CTF arena" />
-      <div className="space-y-6 p-6">
+      <div className="space-y-6 p-4 sm:p-6">
         {events.loading && <Loading label="loading events" />}
         {events.error && <LoadFailed error={events.error} retry={events.refetch} />}
+
+        {isAuthor && (
+          <AuthorPanel
+            event={event}
+            onChanged={() => {
+              void events.refetch();
+              void challenges.refetch();
+            }}
+          />
+        )}
+
         {events.data && !event && (
           <Empty
             title="No CTF events yet"
-            hint="Events appear here once a teacher schedules one. For development, python -m palestrix.seed creates a running qualifier."
+            hint={
+              isAuthor
+                ? "Schedule one from the authoring panel above."
+                : "Events appear here once a teacher schedules one."
+            }
           />
         )}
 

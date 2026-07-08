@@ -107,7 +107,7 @@ export function InfrastructureView() {
     return (
       <>
         <Topbar title="Infrastructure" />
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           <Empty
             title="Administrators only"
             hint="This console requires the infra:manage capability (docs/rbac-matrix.md)."
@@ -120,7 +120,7 @@ export function InfrastructureView() {
   return (
     <>
       <Topbar title="Infrastructure" />
-      <div className="space-y-6 p-6">
+      <div className="space-y-6 p-4 sm:p-6">
         {/* Instance providers: the adapter-level truth from the registry */}
         {providers.loading && <Loading label="loading providers" />}
         {providers.error && (

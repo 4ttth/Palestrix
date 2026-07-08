@@ -56,7 +56,7 @@ export function LabView({ instanceId }: { instanceId: string }) {
     return (
       <>
         <Topbar title="Active lab" />
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           <Loading label="loading instance" />
         </div>
       </>
@@ -67,7 +67,7 @@ export function LabView({ instanceId }: { instanceId: string }) {
     return (
       <>
         <Topbar title="Active lab" />
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {instance.error.status === 404 ? (
             <Empty
               title="No such instance"
@@ -96,7 +96,7 @@ export function LabView({ instanceId }: { instanceId: string }) {
   return (
     <>
       <Topbar title="Active lab" />
-      <div className="space-y-6 p-6">
+      <div className="space-y-6 p-4 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">

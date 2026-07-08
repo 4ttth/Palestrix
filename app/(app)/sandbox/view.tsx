@@ -98,7 +98,7 @@ export function SandboxView() {
   return (
     <>
       <Topbar title="Malware sandbox" />
-      <div className="space-y-6 p-6">
+      <div className="space-y-6 p-4 sm:p-6">
         {notDeployed ? (
           <NotDeployed />
         ) : (
@@ -407,6 +407,12 @@ function ReportDetail({
 }) {
   const s = report.static;
   const live = LIVE_STATES.has(report.state);
+  // A run should leave "queued" within seconds. Minutes in that state means
+  // nothing is consuming jobs: on a Redis deployment the worker process
+  // (python -m palestrix.worker) is down or can't reach Redis.
+  const stuckQueued =
+    report.state === "queued" &&
+    Date.now() - new Date(report.created_at).getTime() > 2 * 60 * 1000;
 
   async function toggleShare() {
     try {
@@ -459,6 +465,14 @@ function ReportDetail({
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {stuckQueued && (
+            <p className="rounded-(--radius-input) bg-palestras-soft px-4 py-3 text-[13px] leading-relaxed text-palestras">
+              Still queued after several minutes — nothing is consuming the
+              job queue. On a Redis deployment (PALESTRIX_QUEUE_BACKEND=redis)
+              check that the worker service is running:{" "}
+              <span className="font-mono">python -m palestrix.worker</span>.
+            </p>
+          )}
           {report.state === "failed" ? (
             <p className="rounded-(--radius-input) bg-expired-soft px-4 py-3 text-[13px] text-expired">
               Analysis failed: {report.error ?? "unknown error"}

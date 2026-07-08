@@ -233,15 +233,21 @@ class ProxmoxProvider:
         self._remove_vmid(int(vm["vmid"]))
         add_log(db, instance.id, "vm: stopped and destroyed", level="warn")
 
-    def upload_iso(self, filename: str, data: bytes) -> str:
+    def upload_iso(self, filename: str, data) -> str:
         """Forward an admin-uploaded ISO to the cluster's ISO storage
         (``POST /nodes/{node}/storage/{storage}/upload``), so templates can
         be built from it without touching the Proxmox UI — the Phase 7
-        hardened-runbook path (docs/usecase-a-baremetal.md §Layer 1 step 5)."""
+        hardened-runbook path (docs/usecase-a-baremetal.md §Layer 1 step 5).
+
+        ``data`` may be bytes or a seekable binary file object; file objects
+        are streamed so multi-GB ISOs never sit in memory whole."""
         resp = self._client.post(
             f"/nodes/{self._node}/storage/{self._iso_storage}/upload",
             data={"content": "iso"},
             files={"filename": (filename, data, "application/x-iso9660-image")},
+            # A multi-GB ISO outlives the default API timeout; only the
+            # read/write legs need the headroom.
+            timeout=httpx.Timeout(self._timeout, read=3600.0, write=3600.0),
         )
         if resp.status_code >= 400:
             raise ProxmoxError(

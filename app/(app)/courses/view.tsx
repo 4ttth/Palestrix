@@ -26,6 +26,7 @@ import { UploadPanel } from "@/components/course/upload-panel";
 import { AutogradePanel } from "@/components/course/autograde-panel";
 import { CanvasPanel } from "@/components/course/canvas-panel";
 import { Gradebook } from "@/components/course/gradebook";
+import { RosterPanel } from "@/components/course/roster-panel";
 import { Empty, LoadFailed, Loading } from "@/components/ui/async";
 import { api, ApiError } from "@/lib/api/client";
 import { useApi } from "@/lib/api/hooks";
@@ -125,7 +126,7 @@ export function CoursesView() {
   return (
     <>
       <Topbar title="Course manager" />
-      <div className="space-y-6 p-6">
+      <div className="space-y-6 p-4 sm:p-6">
         {courses.loading && <Loading label="loading courses" />}
         {courses.error && <LoadFailed error={courses.error} retry={courses.refetch} />}
         {courses.data && courses.data.length === 0 && (
@@ -148,7 +149,21 @@ export function CoursesView() {
           </Card>
         )}
 
-        <div className="grid gap-4 lg:grid-cols-3">
+        {isTeacher && (courses.data?.length ?? 0) > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>New course</CardTitle>
+              <CardDescription>
+                Courses carry your assignments, roster, and lab publications.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <NewCourseForm onCreated={() => void courses.refetch()} />
+            </CardContent>
+          </Card>
+        )}
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {(courses.data ?? []).map((c) => (
             <button
               key={c.id}
@@ -257,6 +272,10 @@ export function CoursesView() {
                     void assignments.refetch();
                     void courses.refetch();
                   }}
+                />
+                <RosterPanel
+                  course={selected}
+                  onChanged={() => void courses.refetch()}
                 />
                 <AutogradePanel />
                 <CanvasPanel course={selected} />
