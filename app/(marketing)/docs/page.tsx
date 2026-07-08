@@ -15,8 +15,8 @@ const docs = [
   },
   {
     file: "usecase-a-baremetal.md",
-    title: "Use case A: Baremetal",
-    body: "Proxmox VE with OpenNebula or CloudStack, ZFS, MinIO, and edge TLS behind your public IP or domain.",
+    title: "Use case A: Proxmox VE workstation",
+    body: "One Proxmox VE 9.1.1 workstation: registry-driven tenancy, ZFS, MinIO, and edge TLS behind your public IP or domain.",
   },
   {
     file: "usecase-b-cloud-aws.md",

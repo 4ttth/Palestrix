@@ -98,7 +98,7 @@ GET    /api/v1/admin/cloud               the active cloud layer (local |
 ```
 
 `POST /api/v1/admin/isos` stores the ISO in object storage and — while the
-Proxmox adapter owns the "vm" kind — forwards it to the cluster's ISO storage
+Proxmox adapter owns the "vm" kind — forwards it to the Proxmox ISO storage
 (`PALESTRIX_PROXMOX_ISO_STORAGE`), returning
 `{ "stored": "isos/kali.iso", "forwarded_to": "local:iso/kali.iso" }`; a
 forwarding failure keeps the object-storage copy and reports `forward_error`

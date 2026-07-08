@@ -1,31 +1,36 @@
-# Installing PalestrIX — Use Case A: Baremetal (Public IP / Domain)
+# Installing PalestrIX — Use Case A: Single Proxmox VE Workstation
 
-A step-by-step installation for hardware you own, reachable through your own
-public IP or domain. Follow it top to bottom on a fresh site; every step is a
-command you run or a screen you fill in. The architecture and the *why*
-behind each layer live in [usecase-a-baremetal.md](usecase-a-baremetal.md) —
-this document is the *how*, in order.
+A step-by-step installation for one workstation you own, running **Proxmox VE
+9.1.1**, reachable through your own public IP or domain. Follow it top to bottom
+on a fresh box; every step is a command you run or a screen you fill in. The
+architecture and the *why* behind each layer live in
+[usecase-a-baremetal.md](usecase-a-baremetal.md) — this document is the *how*,
+in order.
 
-**What you end up with:** Proxmox VE hosting ephemeral lab VMs and a platform
-VM running PostgreSQL, Redis, MinIO, the FastAPI core API, the worker, and
-the Next.js frontend, fronted by Caddy with automatic TLS — with tenants
-isolated on VLANs, the TTL reaper destroying expired labs, the production
-boot guard armed, and (optionally) Canvas LMS wired in.
+**What you end up with:** one Proxmox VE host running both the PalestrIX
+platform (a management LXC/VM with PostgreSQL, Redis, MinIO, the FastAPI core
+API, the worker, and the Next.js frontend, fronted by Caddy with automatic TLS)
+and every student's ephemeral lab — with tenants isolated on VLANs inside the
+host's VLAN-aware bridge, the TTL reaper destroying expired labs, the production
+boot guard armed, and (optionally) a sandbox VM and Canvas LMS wired in.
+
+This is a single-node deployment: no cluster, no second hypervisor, no external
+VLAN switch.
 
 ## Contents
 
 1. [Prerequisites](#1-prerequisites)
 2. [Network plan and DNS](#2-network-plan-and-dns)
 3. [Proxmox VE](#3-proxmox-ve)
-4. [The platform VM](#4-the-platform-vm)
+4. [The platform guest](#4-the-platform-guest)
 5. [PostgreSQL](#5-postgresql)
 6. [Redis](#6-redis)
 7. [MinIO](#7-minio)
 8. [The core API and worker](#8-the-core-api-and-worker)
 9. [The frontend](#9-the-frontend)
 10. [The edge proxy (Caddy)](#10-the-edge-proxy-caddy)
-11. [The multitenant cloud layer](#11-the-multitenant-cloud-layer)
-12. [The malware sandbox host (optional)](#12-the-malware-sandbox-host-optional)
+11. [Tenancy](#11-tenancy)
+12. [The malware sandbox VM (optional)](#12-the-malware-sandbox-vm-optional)
 13. [Canvas LMS (optional)](#13-canvas-lms-optional)
 14. [Arm the production boot guard](#14-arm-the-production-boot-guard)
 15. [Verify the deployment](#15-verify-the-deployment)
@@ -37,31 +42,31 @@ boot guard armed, and (optionally) Canvas LMS wired in.
 
 | You need | Details |
 |---|---|
-| Hardware | See the [hardware baseline](usecase-a-baremetal.md#hardware-baseline). Minimum: one 16-core / 128 GB node plus (optionally) a separate sandbox box |
+| One workstation | See the [hardware baseline](usecase-a-baremetal.md#hardware-baseline). Minimum: 16-core / 128 GB / 2 TB SSD — hosts the platform *and* the labs |
 | A domain | `palestrix.example.edu` with control over its DNS records |
 | A public IP | Static, or dynamic DNS you trust; ports 80/443 forwardable |
-| A VLAN-capable switch | The tenant range (default 100–1999) must be trunkable to the hypervisors |
-| Proxmox VE 8.x ISO | <https://www.proxmox.com/en/downloads> |
-| This repository | Cloned onto the platform VM in step 4 |
+| Proxmox VE 9.1.1 ISO | <https://www.proxmox.com/en/downloads> |
+| This repository | Cloned into the platform guest in step 4 |
 
-Everything below assumes Debian 12/Ubuntu 24.04 on the platform VM and a
-POSIX shell. Run commands as root or with `sudo` as shown.
+No VLAN-capable switch is needed — tenant VLANs are filtered inside the host's
+`vmbr0` bridge (step 3.4). The platform guest below runs Debian 12 / Ubuntu
+24.04 on a POSIX shell; run commands as root or with `sudo` as shown.
 
 ## 2. Network plan and DNS
 
-1. Decide the address plan and write it down before anything else:
+1. Decide the address plan and write it down before anything else. All of it
+   lives on the one host:
 
    | Network | Example | Purpose |
    |---|---|---|
-   | Management | `10.0.10.0/24` | Proxmox UI/SSH, platform VM — never routed to tenants |
+   | Management | `10.0.10.0/24` | Proxmox UI/SSH and the platform guest — never on a tenant VLAN |
    | Tenant pool | `10.24.0.0/16` | Carved into a /24 per tenant by PalestrIX (`PALESTRIX_TENANT_CIDR_POOL`) |
-   | Tenant VLANs | tags `100–1999` | One tag per tenant, allocated by PalestrIX (`PALESTRIX_TENANT_VLAN_MIN/MAX`) |
-   | Sandbox | `10.66.6.0/24`, VLAN 666 | The detonation host; no route to anything else |
+   | Tenant VLANs | tags `100–1999` | One tag per tenant, allocated by PalestrIX (`PALESTRIX_TENANT_VLAN_MIN/MAX`), filtered by `vmbr0` |
+   | Sandbox | `10.66.6.0/24`, VLAN 666 | The detonation VM; no route to anything else |
 
-2. Configure the switch: trunk the tenant VLAN range **only** to the ports
-   feeding the hypervisor bridge; the management VLAN goes to the Proxmox
-   UI ports and the platform VM; the sandbox VLAN goes only to the sandbox
-   host.
+2. There is no switch to configure: the VLAN-aware bridge (step 3.4) isolates
+   the tenant tags in software on the host. Just give the workstation a single
+   uplink to your LAN/router on the management network.
 
 3. Create the DNS records at your provider:
 
@@ -70,16 +75,18 @@ POSIX shell. Run commands as root or with `sudo` as shown.
    *.labs.palestrix.example.edu.  A     <your public IP>   ; optional, per-instance subdomains
    ```
 
-4. On the router/firewall, port-forward **only** 80 and 443 to the machine
-   that will run Caddy (the platform VM in this guide), plus one UDP port if
-   you later add WireGuard for remote headless-lab access.
+4. On the router/firewall, port-forward **only** 80 and 443 to the platform
+   guest's management address, plus one UDP port if you later add WireGuard for
+   remote headless-lab access.
 
 ## 3. Proxmox VE
 
-1. Install Proxmox VE 8.x from the ISO on each node. Choose ZFS
-   (RAID1/RAIDZ) for the system pool at install time.
+1. Install **Proxmox VE 9.1.1** from the ISO on the workstation. Choose ZFS
+   (RAID1/RAIDZ, or single-disk on a modest box) for the system pool at install
+   time.
 
-2. Create the data pool and register storage (adjust device names):
+2. Create the data pool and register storage (adjust device names). This pool
+   holds VM disks, ISOs, and the MinIO object store:
 
    ```sh
    zpool create tank mirror /dev/nvme1n1 /dev/nvme2n1
@@ -88,14 +95,11 @@ POSIX shell. Run commands as root or with `sudo` as shown.
    pvesm add dir     tank-iso --path /tank/iso --content iso
    ```
 
-3. Multi-node sites: cluster the nodes.
+3. Single node — skip clustering entirely. There is no `pvecm` step; the
+   default node name is `pve`.
 
-   ```sh
-   pvecm create palestrix        # on node 1
-   pvecm add <node1-ip>          # on each additional node
-   ```
-
-4. Make the bridge VLAN-aware so tenant tags ride on it (`/etc/network/interfaces`):
+4. Make the bridge VLAN-aware so tenant tags isolate labs on this one host,
+   with no external switch (`/etc/network/interfaces`):
 
    ```
    auto vmbr0
@@ -109,8 +113,9 @@ POSIX shell. Run commands as root or with `sudo` as shown.
        bridge-vids 2-4094
    ```
 
-   Then `ifreload -a`. PalestrIX tags each instance's `net0` with its
-   tenant's VLAN automatically (Phase 7).
+   Then `ifreload -a`. PalestrIX tags each lab's `net0` with its tenant's VLAN
+   automatically (Phase 7), and the VLAN-aware bridge keeps different tags from
+   reaching each other. (A Proxmox SDN VLAN zone is an equivalent alternative.)
 
 5. Create the orchestration service account and API token — never use
    `root@pam`:
@@ -126,22 +131,27 @@ POSIX shell. Run commands as root or with `sudo` as shown.
    `PALESTRIX_PROXMOX_TOKEN_SECRET` in step 8.
 
 6. Build golden VM templates (Kali, Ubuntu server, Windows eval): upload the
-   ISOs — after step 8 you can do this from the PalestrIX admin screen,
-   which forwards to `tank-iso` — install one VM per template, then:
+   ISOs — after step 8 you can do this from the PalestrIX admin screen, which
+   forwards to `tank-iso` — install one VM per template, then:
 
    ```sh
    qm template <vmid>
    ```
 
-   The template name (for example `kali-web`) is what teachers reference
-   when publishing VM labs.
+   The template name (for example `kali-web`) is what teachers reference when
+   publishing VM labs.
 
-## 4. The platform VM
+## 4. The platform guest
 
-1. Create a VM on the cluster for the platform services: 8 vCPU, 16 GB RAM,
-   100 GB disk, Debian 12 or Ubuntu 24.04, management network.
+Run all the platform services in one LXC container or VM on the Proxmox host
+you just installed. A VM is simplest; an LXC is lighter. Either way it lives on
+the management network, never on a tenant VLAN.
 
-2. Base packages:
+1. Create the guest from the Proxmox UI (or `qm`/`pct`): 8 vCPU, 16 GB RAM,
+   100 GB disk on `tank-vm`, Debian 12 or Ubuntu 24.04, `vmbr0` **untagged**
+   (management network).
+
+2. Inside the guest, install base packages:
 
    ```sh
    apt update && apt install -y git curl python3.12 python3.12-venv \
@@ -169,9 +179,8 @@ POSIX shell. Run commands as root or with `sudo` as shown.
    SQL
    ```
 
-2. Keep PostgreSQL listening on localhost only (the default) — the API runs
-   on the same VM. For a separate DB host, restrict `pg_hba.conf` to the API
-   host's address.
+2. Keep PostgreSQL listening on localhost only (the default) — the API runs in
+   the same guest.
 
 3. Nightly backups (installs a cron job; MinIO's `mc` comes in step 7):
 
@@ -272,25 +281,27 @@ POSIX shell. Run commands as root or with `sudo` as shown.
    PALESTRIX_REDIS_URL=redis://localhost:6379/0
    PALESTRIX_REAPER_ENABLED=true
 
-   # Proxmox adapter (step 3.5): activates the "vm" lab kind.
-   PALESTRIX_PROXMOX_HOST=https://pve-01.internal:8006
+   # Proxmox adapter (step 3.5): activates the "vm" lab kind. The host is this
+   # same workstation, reached on the management network.
+   PALESTRIX_PROXMOX_HOST=https://10.0.10.11:8006
    PALESTRIX_PROXMOX_TOKEN_ID=palestrix@pve!orchestrator
    PALESTRIX_PROXMOX_TOKEN_SECRET=<token secret>
-   PALESTRIX_PROXMOX_NODE=pve-01
+   PALESTRIX_PROXMOX_NODE=pve
    PALESTRIX_PROXMOX_BRIDGE=vmbr0
    PALESTRIX_PROXMOX_ISO_STORAGE=tank-iso
 
-   # Multitenant cloud layer (step 11). "local" is correct for most sites.
+   # Tenancy (step 11): "local" is the only backend for a single workstation.
    PALESTRIX_CLOUD_BACKEND=local
    PALESTRIX_TENANT_VLAN_MIN=100
    PALESTRIX_TENANT_VLAN_MAX=1999
    PALESTRIX_TENANT_CIDR_POOL=10.24.0.0/16
    ```
 
-   > **Note** — production TLS to Proxmox needs a real certificate on the
-   > cluster; the boot guard refuses `PALESTRIX_PROXMOX_VERIFY_TLS=false`.
-   > Proxmox ACME integration: `pvenode acme account register` + `pvenode
-   > acme cert order`, or install your internal CA on the platform VM.
+   > **Note** — production TLS to Proxmox needs a real certificate on the host;
+   > the boot guard refuses `PALESTRIX_PROXMOX_VERIFY_TLS=false`. Proxmox ACME
+   > integration: `pvenode acme account register` + `pvenode acme cert order`,
+   > or install your internal CA in the platform guest. (`PALESTRIX_PROXMOX_HOST`
+   > must then match the certificate's name.)
 
 4. Initialize the schema. Tables are created (and later phases' columns
    migrated) automatically at every startup, so this is just the first boot.
@@ -397,7 +408,8 @@ POSIX shell. Run commands as root or with `sudo` as shown.
 ## 10. The edge proxy (Caddy)
 
 1. `/etc/caddy/Caddyfile` — Caddy provisions Let's Encrypt certificates
-   automatically the first time it serves the domain:
+   automatically the first time it serves the domain. Everything is co-located
+   in this guest, so the targets are localhost:
 
    ```
    palestrix.example.edu {
@@ -423,57 +435,39 @@ POSIX shell. Run commands as root or with `sudo` as shown.
 3. Open `https://palestrix.example.edu`, register your account, enroll a
    passkey, and promote yourself (step 8.7).
 
-## 11. The multitenant cloud layer
+## 11. Tenancy
 
-`PALESTRIX_CLOUD_BACKEND=local` (already set in step 8) is the right choice
-for most sites: PalestrIX allocates each tenant a VLAN tag and a /24 from
-the pools, the Proxmox adapter tags instance NICs, and the API enforces the
-instance/vCPU/RAM quotas at launch. Create tenants in
-**Admin → Infrastructure → Tenants**; each create materializes the network
+`PALESTRIX_CLOUD_BACKEND=local` (already set in step 8) is the only tenancy
+backend for a single workstation, and it needs no extra software: PalestrIX
+allocates each tenant a VLAN tag and a /24 from the pools, the Proxmox adapter
+tags instance NICs on `vmbr0`, the VLAN-aware bridge isolates them on the host,
+and the API enforces the instance/vCPU/RAM quotas at launch. Create tenants in
+**Admin → Infrastructure → Tenants**; each create materializes the VLAN + CIDR
 on the spot.
 
-Sites that want self-service *inside* the quotas front the hypervisors with
-a manager instead — install **one** of OpenNebula or CloudStack following
-[usecase-a-baremetal.md §Layer 2](usecase-a-baremetal.md#layer-2-multitenant-cloud-layer-choose-one),
-then point PalestrIX at it and restart the API and worker:
+There is no separate cloud-management layer to install on this deployment.
+(The `TenantCloud` contract ships OpenNebula/CloudStack adapters for sites that
+front a hypervisor fleet with a self-service IaaS manager; they are out of
+scope here — leave the backend on `local`.)
+
+## 12. The malware sandbox VM (optional)
+
+Without any of this, `/sandbox` still works: the built-in demo detonator runs
+real static analysis and a clearly labelled synthetic behavior trace. To
+detonate for real, dedicate an **isolated VM on the same Proxmox host** — on
+its own VLAN (for example 666, via a Proxmox SDN zone or a tagged `net0`) with a
+default-deny firewall: no route to tenants or management, one permitted inbound
+TCP port. Follow [sandbox-security.md](sandbox-security.md) for its isolation
+requirements, then:
 
 ```ini
-# OpenNebula
-PALESTRIX_CLOUD_BACKEND=opennebula
-PALESTRIX_OPENNEBULA_ENDPOINT=http://one.internal:2633/RPC2
-PALESTRIX_OPENNEBULA_USERNAME=palestrix
-PALESTRIX_OPENNEBULA_PASSWORD=<service account password>
-PALESTRIX_OPENNEBULA_PHYDEV=bond0
-
-# — or CloudStack —
-PALESTRIX_CLOUD_BACKEND=cloudstack
-PALESTRIX_CLOUDSTACK_ENDPOINT=https://cs.internal:8080/client/api
-PALESTRIX_CLOUDSTACK_API_KEY=<api key>
-PALESTRIX_CLOUDSTACK_SECRET_KEY=<secret key>
-PALESTRIX_CLOUDSTACK_ZONE_ID=<zone uuid>
-PALESTRIX_CLOUDSTACK_NETWORK_OFFERING_ID=<isolated network offering uuid>
-```
-
-Tenant creation now additionally materializes the group/VDC/network (or
-domain/account/network); quota edits sync through; archiving retires the
-manager objects.
-
-## 12. The malware sandbox host (optional)
-
-Without any of this, `/sandbox` still works: the built-in demo detonator
-runs real static analysis and a clearly labelled synthetic behavior trace.
-To detonate for real, dedicate a host on the sandbox VLAN and follow
-[sandbox-security.md](sandbox-security.md) for its isolation requirements
-(no route to tenants or management; one permitted inbound TCP port). Then:
-
-```ini
-PALESTRIX_SANDBOX_COORDINATOR_URL=https://sandbox-01.internal:8443
+PALESTRIX_SANDBOX_COORDINATOR_URL=https://10.66.6.10:8443
 PALESTRIX_SANDBOX_COORDINATOR_TOKEN=<shared token>
 PALESTRIX_SANDBOX_COORDINATOR_VERIFY_TLS=true
 ```
 
-Restart the API; the sandbox status endpoint now reports the live
-coordinator instead of the demo detonator.
+Restart the API; the sandbox status endpoint now reports the live coordinator
+instead of the demo detonator.
 
 ## 13. Canvas LMS (optional)
 
@@ -481,7 +475,7 @@ Full protocol details and the adapter contract:
 [integrations-canvas-lms.md](integrations-canvas-lms.md). The condensed
 sequence:
 
-1. Generate the tool signing key on the platform VM and keep it in the env
+1. Generate the tool signing key in the platform guest and keep it in the env
    file (the boot guard refuses an empty key in production when Canvas is
    configured):
 
@@ -548,8 +542,8 @@ systemctl restart palestrix-api
 ```
 
 Then work through the [hardening checklist](usecase-a-baremetal.md#hardening-checklist)
-for the items outside the app's sight (switch ACLs, fail2ban, secrets
-handling, update policy).
+for the items outside the app's sight (VLAN-aware bridge and firewall rules,
+fail2ban, secrets handling, update policy).
 
 ## 15. Verify the deployment
 
@@ -562,10 +556,11 @@ Abbreviated:
 - [ ] Let the TTL lapse; the instance is destroyed and quota released
       without human action.
 - [ ] Submit a CTF flag; leaderboard and Palestras update.
-- [ ] Create a tenant; over-cap launches are refused naming the quota;
-      archive is refused while an instance runs.
-- [ ] The sandbox host (if present) cannot reach tenant or management
-      networks.
+- [ ] Create two tenants; confirm each gets its own VLAN + /24, that
+      over-cap launches are refused naming the quota, that archive is refused
+      while an instance runs, and that the two tenants cannot reach each other
+      across `vmbr0`.
+- [ ] The sandbox VM (if present) cannot reach tenant or management networks.
 - [ ] Canvas (if wired): roster sync, deep-linked launch, grade passback
       round trip.
 
@@ -575,7 +570,8 @@ Abbreviated:
 |---|---|---|
 | API unit exits immediately | Boot guard finding | `journalctl -u palestrix-api` names it; fix the env, don't bypass |
 | Passkey enrollment fails | `PALESTRIX_RP_ID`/`_ORIGIN` don't match the browser origin | Both must be the exact public domain, https |
-| Instance stuck in `provisioning` | Worker not running, or Proxmox token wrong | `systemctl status palestrix-worker`; test the token with `curl -k -H "Authorization: PVEAPIToken=<id>=<secret>" https://pve-01:8006/api2/json/nodes` |
+| Instance stuck in `provisioning` | Worker not running, or Proxmox token wrong | `systemctl status palestrix-worker`; test the token with `curl -k -H "Authorization: PVEAPIToken=<id>=<secret>" https://10.0.10.11:8006/api2/json/nodes` |
+| Two tenants can reach each other | `vmbr0` not VLAN-aware, or `net0` not tagged | Confirm `bridge-vlan-aware yes` (step 3.4) and that the tenant's `vlan_id` is set in the admin console |
 | Launch refused `quota_exceeded` | Tenant at instance/vCPU/RAM cap | Raise the tenant quota in the admin console, or destroy instances |
 | Canvas launch: "kid not in the platform keyset" | Issuer/JWKS URL mismatch | Check `PALESTRIX_CANVAS_ISSUER` and the JWKS override for cloud Canvas |
 | Canvas launch: "Account not linked yet" page | Student not in a synced roster | Teacher runs **Sync roster** on the linked course, student launches again |

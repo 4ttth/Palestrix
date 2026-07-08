@@ -32,13 +32,15 @@ mapping, a behavior-event timeline streamed over SSE, samples and reports
 sealed at rest, and admin-gated artifact export — with the live `/sandbox`
 surface wired to all of it — and the multitenant layer with hardened
 deployments (Phase 7): the `TenantCloud` contract
-(`backend/palestrix/tenancy/`) with a registry-only LocalCloud plus real
-OpenNebula and CloudStack adapters, full tenant lifecycle from the admin
-console (create materializes VLAN + CIDR, quota edits sync through, archive
-requires an idle tenant), instances/vCPU/RAM quota enforcement at launch
-with the blocking quota named, tenant VLAN tags on the Proxmox adapter and
-tenant subnets on the Docker adapter, admin ISO forwarding to cluster
-storage, additive startup migrations, security headers on every response,
+(`backend/palestrix/tenancy/`) with the registry-only LocalCloud as the
+default — the single Proxmox VE workstation path — plus optional OpenNebula
+and CloudStack adapters for a hypervisor fleet, full tenant lifecycle from the
+admin console (create materializes VLAN + CIDR, quota edits sync through,
+archive requires an idle tenant), instances/vCPU/RAM quota enforcement at
+launch with the blocking quota named, tenant VLAN tags on the Proxmox adapter
+(isolated by the host's VLAN-aware bridge) and tenant subnets on the Docker
+adapter, admin ISO forwarding to Proxmox ISO storage, additive startup
+migrations, security headers on every response,
 and a production boot guard that refuses to start misconfigured — and Canvas
 LMS integration (Phase 8): an `ExternalPlatform` adapter layer
 (`backend/palestrix/integrations/`) with Canvas as the reference adapter —
@@ -119,7 +121,7 @@ wired to assignments + `/labs/templates`.
 | Document                                                           | Contents                                                                                           |
 | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
 | [docs/architecture.md](docs/architecture.md)                       | System map, services, build order                                                                  |
-| [docs/usecase-a-baremetal.md](docs/usecase-a-baremetal.md)         | Baremetal runbook: Proxmox VE + OpenNebula/CloudStack, ZFS, MinIO, Traefik/Caddy, public IP/domain |
+| [docs/usecase-a-baremetal.md](docs/usecase-a-baremetal.md)         | Single Proxmox VE 9.1.1 workstation runbook: registry-driven tenancy, ZFS, MinIO, Caddy, public IP/domain |
 | [docs/usecase-b-cloud-aws.md](docs/usecase-b-cloud-aws.md)         | Cloud runbook with generic and AWS names for every service                                         |
 | [docs/ephemeral-lifecycle.md](docs/ephemeral-lifecycle.md)         | Instance state machine, TTL reaper, multitenancy invariants                                        |
 | [docs/rbac-matrix.md](docs/rbac-matrix.md)                         | Full role/capability matrix + gamification rules                                                   |
@@ -200,13 +202,14 @@ API-driven: create materializes, PATCH syncs quotas through, DELETE archives
 (refused while instances are active; the VLAN/CIDR stay reserved forever).
 Launch enforces all three tenant quotas — instances, vCPU, RAM against each
 template's declared `cpu`/`ram_gb` — and the 409 names the blocking quota;
-the Proxmox adapter tags `net0` with the tenant VLAN, the Docker adapter
-pins the tenant bridge subnet, and admin ISO uploads forward to cluster
+the Proxmox adapter tags `net0` with the tenant VLAN (isolated by the host's
+VLAN-aware bridge, no external switch on a single box), the Docker adapter
+pins the tenant bridge subnet, and admin ISO uploads forward to Proxmox ISO
 storage. Hardened deployments: additive startup migrations
 (`migrations.py`), security headers on every response, and the
 `PALESTRIX_ENVIRONMENT=production` boot guard (`hardening.py`) that refuses
-to start on any readiness finding. Both runbooks updated with the cloud
-layer wiring and hardening steps; the admin console gained the full tenants
+to start on any readiness finding. Both runbooks updated with the tenancy
+wiring and hardening steps; the admin console gained the full tenants
 surface (create, quota edits, archive, live usage, active cloud layer).
 Full test suite: 63 tests pass.
 
