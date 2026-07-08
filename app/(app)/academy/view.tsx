@@ -111,7 +111,7 @@ export function AcademyView() {
   return (
     <>
       <Topbar title="Academy" />
-      <div className="space-y-6 p-6">
+      <div className="space-y-6 p-4 sm:p-6">
         {paths.loading && <Loading label="loading paths" />}
         {paths.error && <LoadFailed error={paths.error} retry={paths.refetch} />}
         {modulesError && <LoadFailed error={modulesError} />}

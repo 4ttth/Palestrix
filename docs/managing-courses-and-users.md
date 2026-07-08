@@ -42,13 +42,9 @@ course power. A course is owned by whoever created it (`teacher_id`), and
 every ownership check (assignments, grading, rosters, Canvas linking)
 follows that column.
 
-**UI:** sign in as a teacher → **Courses** (`/courses`). A teacher with no
-courses yet sees the *Create your first course* card: fill **Code**
-(`CS 3712`), **Title**, optional **Section**, press **Create course**.
-
-> Known gap: the create form only renders in the empty state. A teacher
-> who already owns a course must use the API to create the next one until
-> the form is surfaced permanently.
+**UI:** sign in as a teacher → **Courses** (`/courses`). The *New course*
+card is always present: fill **Code** (`CS 3712`), **Title**, optional
+**Section**, press **Create course**.
 
 **API:**
 
@@ -110,43 +106,62 @@ quota enforcement charges at launch (Phase 7), so declare them honestly.
 
 ## Getting students into a class
 
-Three paths exist today, none of them a button in the teacher's UI:
+1. **Teacher roster panel (UI):** `/courses` → select the course → the
+   **Roster** panel lists everyone enrolled; type a student's handle and
+   press **Enroll**, or remove one with the × on their row. The endpoints
+   behind it (`courses:write`, ownership-checked):
 
-1. **Student self-enrollment (API):** the student calls
+   ```bash
+   curl -s http://localhost:8000/api/v1/courses/$COURSE/roster -H "$AUTH"
+   curl -s http://localhost:8000/api/v1/courses/$COURSE/enrollments \
+     -H "$AUTH" -H 'Content-Type: application/json' -d '{"handle":"rafalmz"}'
+   curl -s -X DELETE \
+     http://localhost:8000/api/v1/courses/$COURSE/enrollments/$USER_ID -H "$AUTH"
+   ```
+
+   Only accounts with the `student` role can be enrolled (422 otherwise).
+2. **Student self-enrollment (API):** the student calls
    `POST /api/v1/courses/{course_id}/enroll` with their own session
    (capability `courses:enroll`, student-only). Idempotence is enforced
    with a 409 on re-enrollment.
-2. **Canvas roster sync (recommended for LMS classes):** link the course
+3. **Canvas roster sync (recommended for LMS classes):** link the course
    in the Canvas panel (`/courses` → course → **Canvas LMS**), then
    **Sync roster** — NRPS pre-provisions mapped students and enrolls them;
    it also un-enrolls only students it mapped itself
    ([integrations-canvas-lms.md](integrations-canvas-lms.md)).
-3. **Scripted onboarding:** an API key with `courses:write` +
+4. **Scripted onboarding:** an API key with `courses:write` +
    student-session enroll calls, for bulk setups without an LMS.
-
-> Known gap: there is no teacher/admin "add student to my course"
-> endpoint, and no student-facing course browser to discover and join a
-> class. The `/courses` empty-state copy ("Your teacher enrolls you")
-> describes the intended flow, not the implemented one. Until then, use
-> Canvas sync or the self-enroll API.
 
 ## Managing users (admin / superadmin)
 
-**Account creation** is self-service: `/register` (or
-`POST /api/v1/auth/register`) always creates a **student** with no tenant.
-There is no admin create-user endpoint; elevation is a second, explicit
-step by an admin. Identities arriving through Canvas LTI map by
-`sub` + issuer and are pre-provisioned only by roster sync — never by a
-bare launch.
+**UI: the Users console** (`/admin/users`, sidebar → Admin → Users;
+capability `users:manage`). It carries the full flow: create an account
+with any permitted role and an optional tenant, filter/search all
+accounts, change a role from the inline dropdown, and assign or clear a
+user's tenant. Role changes apply on the user's next request — session
+principals resolve role and tenant from the database, not from JWT claims.
 
-**These operations are API-only today** — the admin console
-(`/admin/infrastructure`) covers nodes, instances, ISOs, and tenants, but
-has no Users tab yet.
+**Self-registration** at `/register` (or `POST /api/v1/auth/register`)
+always creates a **student**. Its tenant follows the auto-tenancy rule:
+`PALESTRIX_DEFAULT_TENANT_ID` if it names an active tenant, else the sole
+active tenant when exactly one exists, else unassigned. Identities
+arriving through Canvas LTI map by `sub` + issuer and are pre-provisioned
+only by roster sync — never by a bare launch.
 
-List everyone (`users:manage` — admin or superadmin):
+The same operations over the API — list everyone (`users:manage`):
 
 ```bash
 curl -s http://localhost:8000/api/v1/users -H "$AUTH"
+```
+
+Create an account (role rules below apply):
+
+```bash
+curl -s http://localhost:8000/api/v1/users -H "$AUTH" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Teodoro Dela Cruz","handle":"sir.delacruz",
+       "email":"delacruz@example.edu","password":"a-long-password-123",
+       "role":"teacher","tenant_id":"hau-bscs-3a"}'
 ```
 
 Change a role:
@@ -166,13 +181,17 @@ The boundary, enforced in `api/users.py`:
 "Either direction" means an admin can neither promote anyone *to*
 admin/superadmin nor touch a user who already *holds* one of those roles.
 
-Assign a user to a tenant (the quota/VLAN domain used at instance launch;
-`infra:manage`):
+Assign a user to a tenant (the quota/VLAN domain used at instance launch).
+Two equivalent endpoints — by tenant + handle (`infra:manage`) or by user
+id (`users:manage`, `null` clears the assignment):
 
 ```bash
 curl -s -X POST \
   http://localhost:8000/api/v1/admin/tenants/hau-bscs-3a/assign/rafalmz \
   -H "$AUTH"
+curl -s -X PATCH http://localhost:8000/api/v1/users/$USER_ID/tenant \
+  -H "$AUTH" -H 'Content-Type: application/json' \
+  -d '{"tenant_id":"hau-bscs-3a"}'
 ```
 
 Machine principals follow the same ceiling: an API key or OAuth client can
@@ -180,15 +199,24 @@ never hold a scope its creating account's role does not cover
 (`allowed_scopes_for_role`), so a teacher's key cannot manage users no
 matter what scopes are requested.
 
+## Self-service account settings
+
+Every signed-in user has **Settings** (`/settings`): display name
+(`PATCH /api/v1/auth/me`), password rotation (`POST /api/v1/auth/password`,
+current password required), passkey enrollment/removal, and personal API
+keys. Handle, email, role, and tenant are staff-managed in the users
+console by design.
+
 ## Current limitations (honest list)
 
 - **Academy paths/modules are seed-only.** No API or UI creates `Path` /
   `Module` rows; teachers author course content, not academy curriculum.
   Authoring endpoints are future work.
-- **Course create form only appears when the teacher has zero courses.**
-- **No enrollment UI**: no teacher add-student action and no student
-  course browser; Canvas sync or the self-enroll API are the working paths.
-- **No admin user CRUD beyond roles**: no create, deactivate, delete, or
-  password-reset endpoint, and no Users surface in the admin console.
+- **No student course browser**: students cannot discover and join a class
+  themselves in the UI; the teacher roster panel, Canvas sync, or the
+  self-enroll API are the working paths.
+- **No deactivate/delete or admin password reset**: an account can be
+  created and re-roled from the console, but not disabled; password resets
+  are self-service only.
 - **No create-course-on-behalf-of**: course ownership is always the
   creating principal.

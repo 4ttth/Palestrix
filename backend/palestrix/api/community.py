@@ -44,6 +44,48 @@ def list_writeups(
     return [_with_votes(db, w) for w in rows]
 
 
+@router.get("/writeups/{writeup_id}", response_model=schemas.WriteupOut)
+def get_writeup(
+    writeup_id: str,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+):
+    """One writeup with its full body. Unpublished (moderated or draft) rows
+    stay visible to their author and to moderators."""
+    writeup = db.get(Writeup, writeup_id)
+    if writeup is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such writeup")
+    if not writeup.published and writeup.author_id != principal.user_id:
+        if not principal.can("community:moderate"):
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no such writeup")
+    return _with_votes(db, writeup)
+
+
+@router.get(
+    "/writeups/{writeup_id}/comments", response_model=list[schemas.CommentOut]
+)
+def list_comments(
+    writeup_id: str,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+):
+    writeup = db.get(Writeup, writeup_id)
+    if writeup is None or not writeup.published:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such writeup")
+    rows = db.execute(
+        select(Comment, User)
+        .join(User, User.id == Comment.author_id)
+        .where(Comment.writeup_id == writeup_id)
+        .order_by(Comment.created_at)
+    ).all()
+    out = []
+    for comment, author in rows:
+        row = schemas.CommentOut.model_validate(comment)
+        row.author_handle = author.handle
+        out.append(row)
+    return out
+
+
 @router.post("/writeups", response_model=schemas.WriteupOut, status_code=201)
 def create_writeup(
     body: schemas.WriteupIn,

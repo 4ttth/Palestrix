@@ -9,6 +9,7 @@
  */
 
 import { useState } from "react";
+import Link from "next/link";
 import { ArrowFatUp, ChatCircle, PencilSimple } from "@phosphor-icons/react";
 import { Topbar } from "@/components/shell/topbar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -148,7 +149,7 @@ export function CommunityView() {
   return (
     <>
       <Topbar title="Community" />
-      <div className="grid gap-6 p-6 xl:grid-cols-[2fr_1fr]">
+      <div className="grid gap-6 p-4 sm:p-6 xl:grid-cols-[2fr_1fr]">
         <div className="space-y-6">
           <Card>
             <CardHeader className="flex-row items-center justify-between">
@@ -185,7 +186,12 @@ export function CommunityView() {
                   <li key={w.id} className="flex items-center gap-4 py-3.5">
                     <Avatar handle={w.author_handle} size="md" />
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{w.title}</p>
+                      <Link
+                        href={`/community/${w.id}`}
+                        className="block truncate text-sm font-medium underline-offset-2 transition-colors hover:text-accent hover:underline"
+                      >
+                        {w.title}
+                      </Link>
                       <p className="mt-0.5 flex items-center gap-2 text-xs text-muted">
                         <span className="font-mono">{w.author_handle}</span>
                         <span>{ago(w.created_at)} ago</span>

@@ -1,4 +1,5 @@
 import { Sidebar } from "@/components/shell/sidebar";
+import { NavProvider } from "@/components/shell/nav-context";
 import { SessionProvider } from "@/lib/api/session";
 
 /*
@@ -17,10 +18,12 @@ export default function AppLayout({
 }) {
   return (
     <SessionProvider>
-      <div className="min-h-[100dvh]">
-        <Sidebar />
-        <div className="lg:pl-56">{children}</div>
-      </div>
+      <NavProvider>
+        <div className="min-h-[100dvh]">
+          <Sidebar />
+          <div className="lg:pl-56">{children}</div>
+        </div>
+      </NavProvider>
     </SessionProvider>
   );
 }

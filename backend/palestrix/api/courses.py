@@ -84,6 +84,83 @@ def list_courses(
     return [_course_out(db, c) for c in rows]
 
 
+@router.get("/{course_id}/roster", response_model=list[schemas.RosterRowOut])
+def roster(
+    course_id: str,
+    principal: Principal = Depends(require_capability("courses:write")),
+    db: Session = Depends(get_db),
+):
+    """The teacher's enrollment list for one course."""
+    course = _course_or_404(db, course_id)
+    _require_course_teacher(principal, course)
+    rows = db.execute(
+        select(Enrollment, User)
+        .join(User, User.id == Enrollment.user_id)
+        .where(Enrollment.course_id == course_id)
+        .order_by(Enrollment.created_at)
+    ).all()
+    return [
+        schemas.RosterRowOut(
+            user_id=user.id,
+            handle=user.handle,
+            name=user.name,
+            email=user.email,
+            enrolled_at=enrollment.created_at,
+        )
+        for enrollment, user in rows
+    ]
+
+
+@router.post("/{course_id}/enrollments", status_code=201)
+def enroll_student(
+    course_id: str,
+    body: schemas.EnrollIn,
+    principal: Principal = Depends(require_capability("courses:write")),
+    db: Session = Depends(get_db),
+):
+    """Teacher-driven enrollment by handle (students can also self-enroll
+    through POST /{course_id}/enroll)."""
+    course = _course_or_404(db, course_id)
+    _require_course_teacher(principal, course)
+    student = db.scalar(select(User).where(User.handle == body.handle))
+    if student is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such user")
+    if student.role is not Role.student:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "only students can be enrolled"
+        )
+    exists = db.scalar(
+        select(Enrollment).where(
+            Enrollment.course_id == course_id, Enrollment.user_id == student.id
+        )
+    )
+    if exists:
+        raise HTTPException(status.HTTP_409_CONFLICT, "already enrolled")
+    db.add(Enrollment(course_id=course_id, user_id=student.id))
+    db.commit()
+    return {"enrolled": True, "user_id": student.id}
+
+
+@router.delete("/{course_id}/enrollments/{user_id}", status_code=204)
+def unenroll_student(
+    course_id: str,
+    user_id: str,
+    principal: Principal = Depends(require_capability("courses:write")),
+    db: Session = Depends(get_db),
+):
+    course = _course_or_404(db, course_id)
+    _require_course_teacher(principal, course)
+    enrollment = db.scalar(
+        select(Enrollment).where(
+            Enrollment.course_id == course_id, Enrollment.user_id == user_id
+        )
+    )
+    if enrollment is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not enrolled")
+    db.delete(enrollment)
+    db.commit()
+
+
 @router.post("/{course_id}/enroll", status_code=201)
 def enroll(
     course_id: str,

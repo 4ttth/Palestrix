@@ -6,8 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import schemas, webauthn_flow
+from ..config import get_settings
 from ..db import get_db
-from ..models import ApiKey, OAuthClient, Role, User, WebAuthnCredential
+from ..models import ApiKey, OAuthClient, Role, Tenant, User, WebAuthnCredential
 from ..rbac import Principal, allowed_scopes_for_role
 from ..security import (
     create_client_token,
@@ -23,6 +24,22 @@ from .deps import get_current_user, get_principal
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def _auto_tenant_id(db: Session) -> str | None:
+    """Auto tenancy for self-registration. PALESTRIX_DEFAULT_TENANT_ID wins
+    when it names an active tenant; otherwise, when the site has exactly one
+    active tenant (the single-class deployment), that one is used. Anything
+    else registers unassigned for an admin to place from the users console."""
+    settings = get_settings()
+    if settings.default_tenant_id:
+        tenant = db.get(Tenant, settings.default_tenant_id)
+        if tenant is not None and not tenant.archived:
+            return tenant.id
+    active = db.scalars(select(Tenant).where(Tenant.archived.is_(False)).limit(2)).all()
+    if len(active) == 1:
+        return active[0].id
+    return None
+
+
 @router.post("/register", response_model=schemas.TokenOut, status_code=201)
 def register(body: schemas.RegisterIn, db: Session = Depends(get_db)):
     taken = db.scalar(
@@ -35,6 +52,7 @@ def register(body: schemas.RegisterIn, db: Session = Depends(get_db)):
         handle=body.handle,
         email=body.email,
         role=Role.student,
+        tenant_id=_auto_tenant_id(db),
         password_hash=hash_password(body.password),
     )
     db.add(user)
@@ -57,6 +75,36 @@ def login(body: schemas.LoginIn, db: Session = Depends(get_db)):
 @router.get("/me", response_model=schemas.UserOut)
 def me(user: User = Depends(get_current_user)):
     return user
+
+
+@router.patch("/me", response_model=schemas.UserOut)
+def update_me(
+    body: schemas.ProfilePatchIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Self-service profile edits. Handle, email, role, and tenant stay
+    fixed here — those are identity and access, managed by staff."""
+    if body.name is not None:
+        user.name = body.name
+    db.commit()
+    return user
+
+
+@router.post("/password", status_code=204)
+def change_password(
+    body: schemas.PasswordChangeIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Change the account password, proving the current one first. Accounts
+    born passkey-only (no password yet) may set one directly."""
+    if user.password_hash and not verify_password(
+        body.current_password, user.password_hash
+    ):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "current password is wrong")
+    user.password_hash = hash_password(body.new_password)
+    db.commit()
 
 
 # -- WebAuthn (passkeys) -------------------------------------------------------
@@ -130,6 +178,36 @@ def webauthn_login_verify(
         except Exception as exc:  # try the next enrolled credential
             last_error = exc
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"passkey rejected: {last_error}")
+
+
+@router.get("/webauthn/credentials")
+def list_passkeys(
+    user: User = Depends(get_current_user), db: Session = Depends(get_db)
+):
+    rows = db.scalars(
+        select(WebAuthnCredential).where(WebAuthnCredential.user_id == user.id)
+    ).all()
+    return [
+        {
+            "id": c.id,
+            "created_at": c.created_at,
+            "transports": list(c.transports or []),
+        }
+        for c in rows
+    ]
+
+
+@router.delete("/webauthn/credentials/{credential_id}", status_code=204)
+def remove_passkey(
+    credential_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    cred = db.get(WebAuthnCredential, credential_id)
+    if cred is None or cred.user_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such passkey")
+    db.delete(cred)
+    db.commit()
 
 
 # -- API keys -------------------------------------------------------------------

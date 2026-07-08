@@ -55,10 +55,14 @@ class LocalStorage:
         return path
 
     def put(self, bucket: str, key: str, data: BinaryIO, size: int) -> str:
+        import shutil
+
         path = self._path(bucket, key)
         path.parent.mkdir(parents=True, exist_ok=True)
+        # Chunked copy: uploads (multi-GB ISOs especially) must never be
+        # buffered whole in memory.
         with open(path, "wb") as fh:
-            fh.write(data.read())
+            shutil.copyfileobj(data, fh, length=4 * 1024 * 1024)
         return f"{bucket}/{key}"
 
     def get(self, bucket: str, key: str) -> bytes:

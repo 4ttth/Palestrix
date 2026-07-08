@@ -39,6 +39,33 @@ class UserOut(ORMModel):
     email: EmailStr
     role: Role
     tenant_id: str | None
+    created_at: datetime | None = None
+
+
+class UserCreateIn(BaseModel):
+    """Staff-created account (users:manage). Unlike self-registration the
+    role is chosen up front; rbac rules in the endpoint keep admins from
+    minting admin/superadmin accounts."""
+
+    name: str = Field(min_length=2, max_length=128)
+    handle: str = Field(pattern=r"^[a-z0-9_.-]{3,32}$")
+    email: EmailStr
+    password: str = Field(min_length=12, max_length=256)
+    role: Role = Role.student
+    tenant_id: str | None = None
+
+
+class UserTenantIn(BaseModel):
+    tenant_id: str | None = None  # None clears the assignment
+
+
+class ProfilePatchIn(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=128)
+
+
+class PasswordChangeIn(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=12, max_length=256)
 
 
 class PublicProfileOut(ORMModel):
@@ -142,6 +169,20 @@ class SubmissionOut(ORMModel):
 
 class GradeIn(BaseModel):
     grade: int = Field(ge=0, le=100)
+
+
+class EnrollIn(BaseModel):
+    handle: str = Field(min_length=3, max_length=32)
+
+
+class RosterRowOut(BaseModel):
+    """One enrolled student in the teacher's roster panel."""
+
+    user_id: str
+    handle: str
+    name: str
+    email: EmailStr
+    enrolled_at: datetime
 
 
 # -- academy ----------------------------------------------------------------------
@@ -356,6 +397,13 @@ class WriteupOut(ORMModel):
 
 class CommentIn(BaseModel):
     body: str = Field(min_length=1, max_length=4000)
+
+
+class CommentOut(ORMModel):
+    id: str
+    body: str
+    created_at: datetime
+    author_handle: str = ""
 
 
 # -- compete -------------------------------------------------------------------------

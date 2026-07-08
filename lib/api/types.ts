@@ -26,6 +26,25 @@ export type UserOut = {
   email: string;
   role: Role;
   tenant_id: string | null;
+  created_at?: string | null;
+};
+
+export type ApiKeyOut = {
+  id: string;
+  name: string;
+  prefix: string;
+  scopes: string[];
+  revoked: boolean;
+  created_at: string;
+};
+
+/** POST /auth/api-keys response; `key` is shown exactly once. */
+export type ApiKeyCreatedOut = ApiKeyOut & { key: string };
+
+export type PasskeyOut = {
+  id: string;
+  created_at: string;
+  transports: string[];
 };
 
 export type PublicProfileOut = {
@@ -158,7 +177,24 @@ export type LeaderboardEntryOut = {
   streak_days: number;
 };
 
+// -- course rosters -----------------------------------------------------------
+
+export type RosterRowOut = {
+  user_id: string;
+  handle: string;
+  name: string;
+  email: string;
+  enrolled_at: string;
+};
+
 // -- community -------------------------------------------------------------------
+
+export type CommentOut = {
+  id: string;
+  body: string;
+  created_at: string;
+  author_handle: string;
+};
 
 export type WriteupOut = {
   id: string;
@@ -243,6 +279,23 @@ export type ProviderOut = {
   name: string;
   kinds: string[];
   instances_active: number;
+};
+
+// -- plugins (superadmin console) ---------------------------------------------
+
+export type PluginOut = {
+  id: string;
+  name: string;
+  version: string;
+  api: string;
+  source: string;
+  state: string;
+  error: string | null;
+  scopes: string[];
+  granted_scopes: string[];
+  config_required: string[];
+  config_optional: string[];
+  config_secret: string[];
 };
 
 // -- sandbox (Phase 6) -----------------------------------------------------------

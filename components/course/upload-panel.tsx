@@ -125,26 +125,34 @@ export function UploadPanel({
               : "Select a course, or publish a live environment platform-wide."}
           </p>
         </div>
-        <label className="flex cursor-pointer items-center gap-2.5 text-[13px] font-medium">
+        {/* Not a <label> wrapper: a button nested in its own label double-
+            fires activation in some browsers, making the switch appear to
+            snap back. The whole row is one explicit toggle button instead. */}
+        <button
+          type="button"
+          role="switch"
+          aria-checked={advanced}
+          onClick={() => setAdvanced((v) => !v)}
+          className="group flex cursor-pointer items-center gap-2.5 text-[13px] font-medium"
+        >
           Advanced: live environment
-          <button
-            type="button"
-            role="switch"
-            aria-checked={advanced}
-            onClick={() => setAdvanced((v) => !v)}
+          <span
+            aria-hidden
             className={cn(
-              "relative h-5.5 w-10 rounded-full transition-colors duration-150",
-              advanced ? "bg-accent" : "bg-surface-2 border border-border"
+              "relative inline-block h-6 w-11 shrink-0 rounded-full border transition-colors duration-150",
+              advanced
+                ? "border-accent bg-accent"
+                : "border-border bg-surface-2 group-hover:border-accent/50"
             )}
           >
             <span
               className={cn(
-                "absolute top-0.5 size-4.5 rounded-full bg-surface shadow-sm transition-transform duration-150",
-                advanced ? "translate-x-5" : "translate-x-0.5"
+                "absolute left-0.5 top-1/2 size-4.5 -translate-y-1/2 rounded-full bg-surface shadow-sm transition-transform duration-150",
+                advanced ? "translate-x-5" : "translate-x-0"
               )}
             />
-          </button>
-        </label>
+          </span>
+        </button>
       </div>
 
       <div className="space-y-5 p-5">

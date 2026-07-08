@@ -170,20 +170,30 @@ def upload_iso(
     active, the ISO is also forwarded to the cluster's ISO storage
     (PALESTRIX_PROXMOX_ISO_STORAGE) so admins build templates from it without
     touching the Proxmox UI — the Phase 7 hardened-runbook path. Object
-    storage keeps the authoritative copy either way."""
-    if not (file.filename or "").endswith(".iso"):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "expected an .iso file")
-    storage = get_storage()
-    data = file.file.read()
-    import io
+    storage keeps the authoritative copy either way.
 
-    key = storage.put("isos", file.filename, io.BytesIO(data), len(data))
-    result: dict = {"stored": key, "forwarded_to": None}
+    ISOs run to multiple GB, so the bytes are streamed end to end — spooled
+    upload -> object storage -> cluster — and never held in memory whole."""
+    name = file.filename or ""
+    if not name.endswith(".iso"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "expected an .iso file")
+    if "/" in name or "\\" in name or ".." in name:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "plain filename only")
+    storage = get_storage()
+    # MinIO needs the exact size up front; the spooled temp file knows it.
+    file.file.seek(0, 2)
+    size = file.file.tell()
+    file.file.seek(0)
+    if size == 0:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "empty file")
+    key = storage.put("isos", name, file.file, size)
+    result: dict = {"stored": key, "size": size, "forwarded_to": None}
     provider = provider_for_kind("vm")
     forward = getattr(provider, "upload_iso", None)
     if callable(forward):
         try:
-            result["forwarded_to"] = forward(file.filename, data)
+            file.file.seek(0)
+            result["forwarded_to"] = forward(name, file.file)
         except Exception as exc:
             # The object-storage copy is safe; surface the cluster problem
             # without losing the upload.
