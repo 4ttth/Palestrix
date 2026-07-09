@@ -54,7 +54,11 @@ def test_proxmox_check_surfaces_auth_failure(client):
     from palestrix.orchestration.proxmox import ProxmoxError, ProxmoxProvider
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(401, text="invalid token value!")
+        # Proxmox reports auth failures in the HTTP reason phrase with an
+        # empty body — exactly what real clusters send for a bad token.
+        return httpx.Response(
+            401, extensions={"reason_phrase": b"invalid token value!"}
+        )
 
     mock_client = httpx.Client(
         base_url="https://pve.test/api2/json",
@@ -67,6 +71,18 @@ def test_proxmox_check_surfaces_auth_failure(client):
     except ProxmoxError as exc:
         assert "401" in str(exc)
         assert "invalid token value" in str(exc)
+        # The failure names the identity it authenticated as (the test env
+        # configures no token), so realm/name mismatches are visible.
+        assert "as <no token configured>" in str(exc)
+
+
+def test_credential_cleaning_strips_quotes_and_whitespace(client):
+    from palestrix.orchestration.proxmox import _clean_credential
+
+    assert _clean_credential("X", '  "palestrix@pve!orch"  ') == "palestrix@pve!orch"
+    assert _clean_credential("X", "'secret-uuid' ") == "secret-uuid"
+    assert _clean_credential("X", "already-clean") == "already-clean"
+    assert _clean_credential("X", "keep'inner\"quotes") == "keep'inner\"quotes"
 
 
 def test_docker_check_uses_cli(client):
