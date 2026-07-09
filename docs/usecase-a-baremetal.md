@@ -104,13 +104,16 @@ enough.
 
    ```
    pveum user add palestrix@pve
-   pveum user token add palestrix@pve orchestrator --privsep 1
-   # Grant the TOKEN, not the user: --privsep 1 gives the token its own ACL.
-   # PVEAdmin covers clone + Datastore.AllocateSpace (clone disk) +
-   # Datastore.AllocateTemplate (ISO upload); PVEVMAdmin alone fails clones
-   # with "403 ... Datastore.AllocateSpace".
-   pveum aclmod / -token 'palestrix@pve!orchestrator' -role PVEAdmin
+   pveum aclmod / -user palestrix@pve -role PVEAdmin
+   # privsep 0: token inherits the user's permissions. PVEAdmin covers clone
+   # + Datastore.AllocateSpace (clone disk) + Datastore.AllocateTemplate (ISO
+   # upload); PVEVMAdmin alone fails clones with "403 ... Datastore.AllocateSpace".
+   pveum user token add palestrix@pve orchestrator --privsep 0
    ```
+
+   With `--privsep 1` the token's effective rights are the *intersection* of
+   the user's and the token's ACLs, so you must grant the same role to both
+   sides or clones hit an `AllocateSpace` 403.
 
    The core API consumes `PROXMOX_HOST`, `PROXMOX_TOKEN_ID`,
    `PROXMOX_TOKEN_SECRET`, and `PROXMOX_NODE` (the single node's name, `pve`
@@ -244,9 +247,9 @@ the app cannot see.
       that fails to start means a finding to fix, never a check to skip.
 - [ ] Proxmox web UI (8006) and SSH reachable only from your management LAN,
       never from a tenant VLAN or the public internet.
-- [ ] API token granted on the token itself (`--privsep 1`) with a role
-      covering clone + `Datastore.AllocateSpace` (`PVEAdmin`, or
-      `PVEVMAdmin` on `/vms` + `PVEDatastoreAdmin` on `/storage`); no
+- [ ] API token whose effective rights cover clone + `Datastore.AllocateSpace`
+      (`PVEAdmin` on the user with `--privsep 0`, or the same role on **both**
+      user and token under `--privsep 1`); no
       `root@pam` anywhere in config.
 - [ ] `PALESTRIX_PROXMOX_VERIFY_TLS=true` with a real certificate on the host
       (the guard refuses `false` in production). Proxmox ACME or your internal

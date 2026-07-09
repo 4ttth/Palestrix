@@ -122,23 +122,31 @@ No VLAN-capable switch is needed — tenant VLANs are filtered inside the host's
 
    ```sh
    pveum user add palestrix@pve
-   pveum user token add palestrix@pve orchestrator --privsep 1
-   # Grant the TOKEN (not just the user): --privsep 1 gives the token its own
-   # ACL, so a role on the user alone leaves the token with no permissions.
-   pveum aclmod / -token 'palestrix@pve!orchestrator' -role PVEAdmin
+   pveum aclmod / -user palestrix@pve -role PVEAdmin
+   # privsep 0: the token inherits the user's permissions. This is a
+   # dedicated service account scoped to exactly what the orchestrator
+   # needs, so there is nothing to separate the token down to.
+   pveum user token add palestrix@pve orchestrator --privsep 0
    ```
 
    `PVEAdmin` is the smallest built-in role that covers the whole launch
    path: `VM.Clone`/`VM.Allocate` to clone a template, **`Datastore.AllocateSpace`
    to allocate the clone's disk** (the piece `PVEVMAdmin` lacks — without it
    clones fail `403 Permission check failed (/storage/..., Datastore.AllocateSpace)`),
-   and `Datastore.AllocateTemplate` for admin ISO uploads. To lock it down
-   further, split the grant instead:
+   and `Datastore.AllocateTemplate` for admin ISO uploads.
 
-   ```sh
-   pveum aclmod /vms     -token 'palestrix@pve!orchestrator' -role PVEVMAdmin
-   pveum aclmod /storage -token 'palestrix@pve!orchestrator' -role PVEDatastoreAdmin
-   ```
+   > **Privilege separation.** With `--privsep 1` the token needs its **own**
+   > ACL entries, and its effective rights are the **intersection** of the
+   > user's and the token's — so a role granted only to the token (or only to
+   > the user) is clamped by whichever side is narrower, and you get an
+   > `AllocateSpace` 403 even though "someone" has the right. If you want
+   > `--privsep 1` for independent token revocation, grant the **same** role
+   > to **both** the user and the token:
+   >
+   > ```sh
+   > pveum aclmod / -user  palestrix@pve               -role PVEAdmin
+   > pveum aclmod / -token 'palestrix@pve!orchestrator' -role PVEAdmin
+   > ```
 
    Record the token id (`palestrix@pve!orchestrator`) and the secret it
    prints **once** — they become `PALESTRIX_PROXMOX_TOKEN_ID` and
