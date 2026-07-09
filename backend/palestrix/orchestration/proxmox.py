@@ -49,6 +49,22 @@ def _clean_credential(name: str, value: str) -> str:
     return cleaned
 
 
+def _fingerprint(secret: str) -> str:
+    """A non-reversible fingerprint of a secret: character count plus the
+    first 8 hex of its SHA-256. Safe to show the owning admin so they can
+    confirm the service loaded the *same* secret that works elsewhere (curl,
+    the Proxmox UI) without the platform ever echoing the secret itself. A
+    mismatch means the running process is reading a different value than
+    expected — a stale .env, a wrong working directory, or a systemd
+    Environment= override winning over the file."""
+    if not secret:
+        return "empty"
+    import hashlib
+
+    digest = hashlib.sha256(secret.encode()).hexdigest()[:8]
+    return f"{len(secret)}ch·{digest}"
+
+
 class ProxmoxProvider:
     name = "proxmox"
     kinds = ("vm",)
@@ -72,6 +88,10 @@ class ProxmoxProvider:
         secret = _clean_credential(
             "PALESTRIX_PROXMOX_TOKEN_SECRET", settings.proxmox_token_secret
         )
+        # Fingerprint (not the secret) so the connection check can prove which
+        # value the process actually loaded — the decisive test when curl
+        # works but the service 401s on the same-looking credential.
+        self._secret_fingerprint = _fingerprint(secret)
         self._client = client or httpx.Client(
             base_url=f"{settings.proxmox_host.rstrip('/')}/api2/json",
             headers={"Authorization": f"PVEAPIToken={self._token_id}={secret}"},
@@ -270,14 +290,19 @@ class ProxmoxProvider:
         token, 403 permission check failed, ...) so the console shows both
         what was tried and why it was refused."""
         who = self._token_id or "<no token configured>"
+        # secret {len}ch·{hash8}: compare against your working credential —
+        #   printf '%s' 'YOUR-SECRET' | sha256sum | cut -c1-8
+        # A mismatch means this process loaded a different secret than the
+        # one that works (stale .env / wrong CWD / systemd Environment=).
+        ident = f"{who} (secret {self._secret_fingerprint})"
         try:
             version = self._get("/version") or {}
             vms = self._get(f"/nodes/{self._node}/qemu") or []
         except ProxmoxError as exc:
-            raise ProxmoxError(f"as {who}: {exc}") from exc
+            raise ProxmoxError(f"as {ident}: {exc}") from exc
         templates = sum(1 for vm in vms if vm.get("template"))
         return (
-            f"Proxmox VE {version.get('version', '?')} reachable as {who}; "
+            f"Proxmox VE {version.get('version', '?')} reachable as {ident}; "
             f"node {self._node}: {len(vms)} VMs visible, {templates} templates"
         )
 

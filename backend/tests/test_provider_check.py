@@ -74,6 +74,24 @@ def test_proxmox_check_surfaces_auth_failure(client):
         # The failure names the identity it authenticated as (the test env
         # configures no token), so realm/name mismatches are visible.
         assert "as <no token configured>" in str(exc)
+        # ...and carries the loaded-secret fingerprint (empty here) so an
+        # env-loading mismatch is diagnosable without leaking the secret.
+        assert "secret empty" in str(exc)
+
+
+def test_secret_fingerprint_is_stable_and_non_reversible():
+    import hashlib
+
+    from palestrix.orchestration.proxmox import _fingerprint
+
+    secret = "e4e2b3b5-7be5-4b2a-9051-5188899d639d"
+    fp = _fingerprint(secret)
+    assert fp == f"36ch·{hashlib.sha256(secret.encode()).hexdigest()[:8]}"
+    assert secret not in fp  # never leaks the secret itself
+    assert _fingerprint("") == "empty"
+    # A trailing newline (the classic .env artifact) changes the fingerprint,
+    # so "looks the same but isn't" is caught.
+    assert _fingerprint(secret) != _fingerprint(secret + "\n")
 
 
 def test_credential_cleaning_strips_quotes_and_whitespace(client):
