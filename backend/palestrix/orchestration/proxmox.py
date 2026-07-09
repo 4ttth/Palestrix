@@ -147,25 +147,65 @@ class ProxmoxProvider:
                 return vm
         return None
 
-    def _agent_ipv4(self, vmid: int) -> str:
-        """Poll the guest agent for the first non-loopback IPv4. The agent
-        needs a little while after boot; 500s until then are expected."""
+    def _agent_ipv4(self, vmid: int, tenant_cidr: str = "") -> str:
+        """Poll the guest agent for the instance's real IPv4. The agent needs
+        a little while after boot; 500s until then are expected.
+
+        Address selection matters: a VM whose tenant VLAN has no DHCP boots
+        with a ``169.254.x`` APIPA (link-local) address, which is useless for
+        SSH — publishing it is the classic "connects to APIPA instead of the
+        private IP" bug. So link-local, loopback, and Docker/CNI ranges are
+        skipped, and when the tenant's CIDR is known its address is preferred
+        over any other NIC. If only an APIPA address ever appears, we keep
+        waiting (then time out) rather than hand back an unreachable one —
+        the real fix is DHCP on the tenant segment (docs/lab-networking.md)."""
+        import ipaddress
+
+        subnet = None
+        if tenant_cidr:
+            try:
+                subnet = ipaddress.ip_network(tenant_cidr, strict=False)
+            except ValueError:
+                subnet = None
+
         deadline = time.monotonic() + self._timeout
         path = f"/nodes/{self._node}/qemu/{vmid}/agent/network-get-interfaces"
         while True:
+            routable = []  # non-loopback, non-link-local IPv4s seen this poll
             try:
                 data = self._get(path) or {}
                 for iface in data.get("result", []):
                     if iface.get("name") in ("lo", "Loopback"):
                         continue
                     for addr in iface.get("ip-addresses", []):
+                        if addr.get("ip-address-type") != "ipv4":
+                            continue
                         ip = addr.get("ip-address", "")
-                        if addr.get("ip-address-type") == "ipv4" and not ip.startswith("127."):
-                            return ip
+                        try:
+                            parsed = ipaddress.ip_address(ip)
+                        except ValueError:
+                            continue
+                        if parsed.is_loopback or parsed.is_link_local:
+                            continue  # 127.* and 169.254.* are never SSH targets
+                        routable.append((ip, parsed))
             except ProxmoxError:
                 pass  # agent not up yet
+            if routable:
+                # A multi-NIC VM: the tenant-subnet address wins; otherwise the
+                # first routable NIC is the lab interface.
+                if subnet is not None:
+                    for ip, parsed in routable:
+                        if parsed in subnet:
+                            return ip
+                return routable[0][0]
+            # Only loopback/link-local so far — the VM has no real lease yet
+            # (or the tenant VLAN has no DHCP). Wait; do not publish APIPA.
             if time.monotonic() > deadline:
-                raise ProxmoxError(f"guest agent on vmid {vmid} never reported an address")
+                raise ProxmoxError(
+                    f"guest agent on vmid {vmid} reported no usable IPv4 "
+                    "(only loopback/link-local — is DHCP running on the tenant "
+                    "VLAN? see docs/lab-networking.md)"
+                )
             time.sleep(self._poll)
 
     # -- provider contract ----------------------------------------------------------
@@ -227,7 +267,9 @@ class ProxmoxProvider:
             instance.proto = "vnc"
             add_log(db, instance.id, f"console: noVNC proxy on {instance.host}:{instance.port}")
         else:
-            instance.host = self._agent_ipv4(vmid)
+            instance.host = self._agent_ipv4(
+                vmid, tenant.network_cidr if tenant is not None else ""
+            )
             instance.port = 22
             instance.proto = "ssh"
         instance.state = InstanceState.running

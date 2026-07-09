@@ -122,13 +122,37 @@ No VLAN-capable switch is needed — tenant VLANs are filtered inside the host's
 
    ```sh
    pveum user add palestrix@pve
-   pveum aclmod / -user palestrix@pve -role PVEVMAdmin
-   pveum user token add palestrix@pve orchestrator --privsep 1
+   pveum aclmod / -user palestrix@pve -role PVEAdmin
+   # privsep 0: the token inherits the user's permissions. This is a
+   # dedicated service account scoped to exactly what the orchestrator
+   # needs, so there is nothing to separate the token down to.
+   pveum user token add palestrix@pve orchestrator --privsep 0
    ```
+
+   `PVEAdmin` is the smallest built-in role that covers the whole launch
+   path: `VM.Clone`/`VM.Allocate` to clone a template, **`Datastore.AllocateSpace`
+   to allocate the clone's disk** (the piece `PVEVMAdmin` lacks — without it
+   clones fail `403 Permission check failed (/storage/..., Datastore.AllocateSpace)`),
+   and `Datastore.AllocateTemplate` for admin ISO uploads.
+
+   > **Privilege separation.** With `--privsep 1` the token needs its **own**
+   > ACL entries, and its effective rights are the **intersection** of the
+   > user's and the token's — so a role granted only to the token (or only to
+   > the user) is clamped by whichever side is narrower, and you get an
+   > `AllocateSpace` 403 even though "someone" has the right. If you want
+   > `--privsep 1` for independent token revocation, grant the **same** role
+   > to **both** the user and the token:
+   >
+   > ```sh
+   > pveum aclmod / -user  palestrix@pve               -role PVEAdmin
+   > pveum aclmod / -token 'palestrix@pve!orchestrator' -role PVEAdmin
+   > ```
 
    Record the token id (`palestrix@pve!orchestrator`) and the secret it
    prints **once** — they become `PALESTRIX_PROXMOX_TOKEN_ID` and
-   `PALESTRIX_PROXMOX_TOKEN_SECRET` in step 8.
+   `PALESTRIX_PROXMOX_TOKEN_SECRET` in step 8. Set them under those **exact**
+   keys (a misspelled key is silently ignored and the adapter logs
+   `PALESTRIX_PROXMOX_TOKEN_SECRET is empty` at startup).
 
 6. Build golden VM templates (Kali, Ubuntu server, Windows eval): upload the
    ISOs — after step 8 you can do this from the PalestrIX admin screen, which
@@ -445,10 +469,19 @@ the management network, never on a tenant VLAN.
 `PALESTRIX_CLOUD_BACKEND=local` (already set in step 8) is the only tenancy
 backend for a single workstation, and it needs no extra software: PalestrIX
 allocates each tenant a VLAN tag and a /24 from the pools, the Proxmox adapter
-tags instance NICs on `vmbr0`, the VLAN-aware bridge isolates them on the host,
-and the API enforces the instance/vCPU/RAM quotas at launch. Create tenants in
-**Admin → Infrastructure → Tenants**; each create materializes the VLAN + CIDR
-on the spot.
+tags instance NICs on the configured bridge, the VLAN-aware bridge isolates
+them on the host, and the API enforces the instance/vCPU/RAM quotas at launch.
+Create tenants in **Admin → Infrastructure → Tenants**; each create
+materializes the VLAN + CIDR on the spot.
+
+> **Give the tenant VLANs DHCP, and isolate them from management.** The tag
+> alone doesn't hand out IPs — without DHCP on the VLAN, a lab VM boots on a
+> `169.254.x` APIPA address and is unreachable. Put lab NICs on a **separate**
+> VLAN-aware bridge from `vmbr0` (management/WAN) and run per-VLAN DHCP (Proxmox
+> SDN, or dnsmasq). The full recipe, plus the student **WireGuard** path and
+> the **CGNAT cloud-relay** workaround, is in
+> [lab-networking.md](lab-networking.md). Set `PALESTRIX_PROXMOX_BRIDGE` to the
+> lab bridge once it exists.
 
 There is no separate cloud-management layer to install on this deployment.
 (The `TenantCloud` contract ships OpenNebula/CloudStack adapters for sites that
