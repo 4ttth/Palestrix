@@ -41,8 +41,15 @@ function clockOf(t: string): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+// Stable default. An inline `= []` default is a NEW array every render, and
+// it sat in the effect dependencies below: every render restarted the effect,
+// whose setVisible([]) caused the next render — an infinite loop that
+// aborted/reopened the SSE stream nonstop, starving route navigation on
+// /labs/* and hammering the API with connections.
+const NO_LINES: LogLine[] = [];
+
 export function ProvisioningLog({
-  lines = [],
+  lines = NO_LINES,
   instanceId,
   onSettled,
   replay = true,
@@ -64,16 +71,22 @@ export function ProvisioningLog({
   const settledRef = useRef(onSettled);
   settledRef.current = onSettled;
 
+  // Live mode: exactly one stream per instance. Nothing else may restart
+  // this effect — re-running it aborts and reopens the SSE fetch.
   useEffect(() => {
-    if (instanceId) {
-      setVisible([]);
-      setStreamError(false);
-      return streamInstanceLogs(instanceId, {
-        onLine: (line) => setVisible((v) => [...v, line as LogLine]),
-        onState: (state) => settledRef.current?.(state),
-        onError: () => setStreamError(true),
-      });
-    }
+    if (!instanceId) return;
+    setVisible([]);
+    setStreamError(false);
+    return streamInstanceLogs(instanceId, {
+      onLine: (line) => setVisible((v) => [...v, line as LogLine]),
+      onState: (state) => settledRef.current?.(state),
+      onError: () => setStreamError(true),
+    });
+  }, [instanceId]);
+
+  // Replay mode: sample lines on template/docs surfaces.
+  useEffect(() => {
+    if (instanceId) return;
 
     if (!replay || reduce) {
       setVisible(lines);

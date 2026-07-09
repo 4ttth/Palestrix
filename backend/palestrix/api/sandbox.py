@@ -205,6 +205,10 @@ def stream_events(
     both with one reader (lib/api/stream.ts)."""
     _require_enabled()
     _visible_or_403(db, principal, report_id)
+    # Release the request-scoped session before streaming: dependencies live
+    # until the response completes, and an open stream would otherwise pin a
+    # pool connection for minutes (see instances.stream_logs).
+    db.close()
     settings = get_settings()
 
     def event_stream():
@@ -241,6 +245,9 @@ def stream_events(
             if state not in SANDBOX_LIVE_STATES or time.monotonic() > deadline:
                 yield f"event: state\ndata: {state.value if state else 'unknown'}\n\n"
                 return
+            # Heartbeat: a yield point per poll so client disconnects tear
+            # the generator down instead of blocking out the full deadline.
+            yield ": keep-alive\n\n"
             time.sleep(settings.log_stream_poll_seconds)
 
     return StreamingResponse(

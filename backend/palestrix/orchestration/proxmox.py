@@ -34,6 +34,21 @@ class ProxmoxError(RuntimeError):
     pass
 
 
+def _clean_credential(name: str, value: str) -> str:
+    """Strip whitespace and surrounding quotes from a credential setting,
+    logging when anything was removed — those artifacts otherwise surface
+    only as an unexplained 401 from the cluster."""
+    cleaned = value.strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in "\"'":
+        cleaned = cleaned[1:-1].strip()
+    if cleaned != value:
+        logger.warning(
+            "proxmox: %s carried surrounding whitespace/quotes; using the cleaned value",
+            name,
+        )
+    return cleaned
+
+
 class ProxmoxProvider:
     name = "proxmox"
     kinds = ("vm",)
@@ -48,34 +63,48 @@ class ProxmoxProvider:
         self._console_host = urlparse(settings.proxmox_host).hostname or ""
         self._timeout = settings.proxmox_timeout_seconds
         self._poll = poll_seconds
+        # The classic .env paste artifacts — surrounding quotes, stray
+        # whitespace — turn into an opaque "401 invalid token value!" from
+        # the cluster. Strip them and say so, instead of failing silently.
+        self._token_id = _clean_credential(
+            "PALESTRIX_PROXMOX_TOKEN_ID", settings.proxmox_token_id
+        )
+        secret = _clean_credential(
+            "PALESTRIX_PROXMOX_TOKEN_SECRET", settings.proxmox_token_secret
+        )
         self._client = client or httpx.Client(
             base_url=f"{settings.proxmox_host.rstrip('/')}/api2/json",
-            headers={
-                "Authorization": "PVEAPIToken="
-                f"{settings.proxmox_token_id}={settings.proxmox_token_secret}"
-            },
+            headers={"Authorization": f"PVEAPIToken={self._token_id}={secret}"},
             verify=settings.proxmox_verify_tls,
             timeout=settings.proxmox_timeout_seconds,
         )
 
     # -- API plumbing -------------------------------------------------------------
 
+    @staticmethod
+    def _failure(resp: httpx.Response) -> str:
+        """Proxmox reports auth failures in the HTTP reason phrase ("401
+        invalid token value!") with an empty body — include both so errors
+        never truncate to a bare status code."""
+        detail = resp.text[:200].strip() or resp.reason_phrase
+        return f"{resp.status_code} {detail}"
+
     def _get(self, path: str):
         resp = self._client.get(path)
         if resp.status_code >= 400:
-            raise ProxmoxError(f"GET {path} -> {resp.status_code}: {resp.text[:200]}")
+            raise ProxmoxError(f"GET {path} -> {self._failure(resp)}")
         return resp.json().get("data")
 
     def _post(self, path: str, **data):
         resp = self._client.post(path, data=data or None)
         if resp.status_code >= 400:
-            raise ProxmoxError(f"POST {path} -> {resp.status_code}: {resp.text[:200]}")
+            raise ProxmoxError(f"POST {path} -> {self._failure(resp)}")
         return resp.json().get("data")
 
     def _delete(self, path: str):
         resp = self._client.delete(path)
         if resp.status_code >= 400:
-            raise ProxmoxError(f"DELETE {path} -> {resp.status_code}: {resp.text[:200]}")
+            raise ProxmoxError(f"DELETE {path} -> {self._failure(resp)}")
         return resp.json().get("data")
 
     def _wait_task(self, upid: str) -> None:
@@ -233,6 +262,25 @@ class ProxmoxProvider:
         self._remove_vmid(int(vm["vmid"]))
         add_log(db, instance.id, "vm: stopped and destroyed", level="warn")
 
+    def check(self) -> str:
+        """Connectivity self-test for the admin console: round-trips the API
+        with the configured token and node — the exact auth the provisioner
+        uses — and reports what it can see. Raises ProxmoxError carrying the
+        authenticating identity plus Proxmox's own status line (401 invalid
+        token, 403 permission check failed, ...) so the console shows both
+        what was tried and why it was refused."""
+        who = self._token_id or "<no token configured>"
+        try:
+            version = self._get("/version") or {}
+            vms = self._get(f"/nodes/{self._node}/qemu") or []
+        except ProxmoxError as exc:
+            raise ProxmoxError(f"as {who}: {exc}") from exc
+        templates = sum(1 for vm in vms if vm.get("template"))
+        return (
+            f"Proxmox VE {version.get('version', '?')} reachable as {who}; "
+            f"node {self._node}: {len(vms)} VMs visible, {templates} templates"
+        )
+
     def upload_iso(self, filename: str, data) -> str:
         """Forward an admin-uploaded ISO to the cluster's ISO storage
         (``POST /nodes/{node}/storage/{storage}/upload``), so templates can
@@ -251,7 +299,7 @@ class ProxmoxProvider:
         )
         if resp.status_code >= 400:
             raise ProxmoxError(
-                f"iso upload -> {resp.status_code}: {resp.text[:200]}"
+                f"iso upload -> {self._failure(resp)}"
             )
         upid = resp.json().get("data")
         if upid:

@@ -209,6 +209,12 @@ def stream_logs(
     the log is the progress, no fake bars (docs/ephemeral-lifecycle.md §3).
     The frontend consumer is components/lab/ProvisioningLog.tsx."""
     _owned_or_admin(db, principal, instance_id)
+    # Release the request-scoped session NOW: FastAPI keeps dependencies
+    # alive until the response finishes, and this response can stream for
+    # minutes. Left checked out, each open stream pins one pool connection
+    # and a page full of viewers exhausts the pool — every other request
+    # then hangs. The generator below uses its own short-lived sessions.
+    db.close()
     settings = get_settings()
 
     def event_stream():
@@ -242,6 +248,11 @@ def stream_logs(
             if not still_provisioning or time.monotonic() > deadline:
                 yield f"event: state\ndata: {state.value if state else 'unknown'}\n\n"
                 return
+            # Heartbeat comment frame every poll: SSE clients ignore it, but
+            # it gives the server a yield point to notice a disconnected
+            # client — otherwise a quiet stream blocks in sleep for the
+            # remaining deadline, holding its worker thread.
+            yield ": keep-alive\n\n"
             time.sleep(settings.log_stream_poll_seconds)
 
     return StreamingResponse(
