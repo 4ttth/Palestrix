@@ -400,3 +400,58 @@ def test_proxmox_adapter_lifecycle(client):
         db.rollback()
     finally:
         db.close()
+
+
+def test_proxmox_agent_ipv4_skips_apipa_and_loopback():
+    """The guest agent reports loopback and a 169.254 APIPA before its real
+    lease; the adapter must never publish either as the SSH target."""
+    from palestrix.orchestration.proxmox import ProxmoxError, ProxmoxProvider
+
+    scans = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/agent/network-get-interfaces"):
+            scans["n"] += 1
+            ifaces = [
+                {"name": "lo", "ip-addresses": [
+                    {"ip-address": "127.0.0.1", "ip-address-type": "ipv4"}]},
+                {"name": "eth0", "ip-addresses": [
+                    {"ip-address": "169.254.11.22", "ip-address-type": "ipv4"}]},
+            ]
+            # The DHCP lease only lands on the third poll.
+            if scans["n"] >= 3:
+                ifaces[1]["ip-addresses"] = [
+                    {"ip-address": "10.24.7.55", "ip-address-type": "ipv4"}
+                ]
+            return httpx.Response(200, json={"data": {"result": ifaces}})
+        return httpx.Response(500, json={"errors": "unmocked"})
+
+    provider = ProxmoxProvider(
+        client=httpx.Client(
+            transport=httpx.MockTransport(handler), base_url="https://pve:8006/api2/json"
+        ),
+        poll_seconds=0,
+    )
+    # Prefers the tenant subnet; APIPA and loopback are skipped entirely.
+    assert provider._agent_ipv4(9001, tenant_cidr="10.24.7.0/24") == "10.24.7.55"
+    assert scans["n"] >= 3
+
+    # A VM that only ever gets APIPA is a hard failure, not a bad SSH target.
+    def apipa_only(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": {"result": [
+            {"name": "eth0", "ip-addresses": [
+                {"ip-address": "169.254.9.9", "ip-address-type": "ipv4"}]},
+        ]}})
+
+    stuck = ProxmoxProvider(
+        client=httpx.Client(
+            transport=httpx.MockTransport(apipa_only), base_url="https://pve:8006/api2/json"
+        ),
+        poll_seconds=0,
+    )
+    stuck._timeout = 0  # deadline is immediately past
+    try:
+        stuck._agent_ipv4(9001, tenant_cidr="10.24.7.0/24")
+        raise AssertionError("APIPA-only should raise, not return a link-local address")
+    except ProxmoxError as exc:
+        assert "no usable IPv4" in str(exc)

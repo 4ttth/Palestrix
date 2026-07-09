@@ -469,10 +469,19 @@ the management network, never on a tenant VLAN.
 `PALESTRIX_CLOUD_BACKEND=local` (already set in step 8) is the only tenancy
 backend for a single workstation, and it needs no extra software: PalestrIX
 allocates each tenant a VLAN tag and a /24 from the pools, the Proxmox adapter
-tags instance NICs on `vmbr0`, the VLAN-aware bridge isolates them on the host,
-and the API enforces the instance/vCPU/RAM quotas at launch. Create tenants in
-**Admin → Infrastructure → Tenants**; each create materializes the VLAN + CIDR
-on the spot.
+tags instance NICs on the configured bridge, the VLAN-aware bridge isolates
+them on the host, and the API enforces the instance/vCPU/RAM quotas at launch.
+Create tenants in **Admin → Infrastructure → Tenants**; each create
+materializes the VLAN + CIDR on the spot.
+
+> **Give the tenant VLANs DHCP, and isolate them from management.** The tag
+> alone doesn't hand out IPs — without DHCP on the VLAN, a lab VM boots on a
+> `169.254.x` APIPA address and is unreachable. Put lab NICs on a **separate**
+> VLAN-aware bridge from `vmbr0` (management/WAN) and run per-VLAN DHCP (Proxmox
+> SDN, or dnsmasq). The full recipe, plus the student **WireGuard** path and
+> the **CGNAT cloud-relay** workaround, is in
+> [lab-networking.md](lab-networking.md). Set `PALESTRIX_PROXMOX_BRIDGE` to the
+> lab bridge once it exists.
 
 There is no separate cloud-management layer to install on this deployment.
 (The `TenantCloud` contract ships OpenNebula/CloudStack adapters for sites that
