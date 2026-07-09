@@ -122,13 +122,29 @@ No VLAN-capable switch is needed — tenant VLANs are filtered inside the host's
 
    ```sh
    pveum user add palestrix@pve
-   pveum aclmod / -user palestrix@pve -role PVEVMAdmin
    pveum user token add palestrix@pve orchestrator --privsep 1
+   # Grant the TOKEN (not just the user): --privsep 1 gives the token its own
+   # ACL, so a role on the user alone leaves the token with no permissions.
+   pveum aclmod / -token 'palestrix@pve!orchestrator' -role PVEAdmin
+   ```
+
+   `PVEAdmin` is the smallest built-in role that covers the whole launch
+   path: `VM.Clone`/`VM.Allocate` to clone a template, **`Datastore.AllocateSpace`
+   to allocate the clone's disk** (the piece `PVEVMAdmin` lacks — without it
+   clones fail `403 Permission check failed (/storage/..., Datastore.AllocateSpace)`),
+   and `Datastore.AllocateTemplate` for admin ISO uploads. To lock it down
+   further, split the grant instead:
+
+   ```sh
+   pveum aclmod /vms     -token 'palestrix@pve!orchestrator' -role PVEVMAdmin
+   pveum aclmod /storage -token 'palestrix@pve!orchestrator' -role PVEDatastoreAdmin
    ```
 
    Record the token id (`palestrix@pve!orchestrator`) and the secret it
    prints **once** — they become `PALESTRIX_PROXMOX_TOKEN_ID` and
-   `PALESTRIX_PROXMOX_TOKEN_SECRET` in step 8.
+   `PALESTRIX_PROXMOX_TOKEN_SECRET` in step 8. Set them under those **exact**
+   keys (a misspelled key is silently ignored and the adapter logs
+   `PALESTRIX_PROXMOX_TOKEN_SECRET is empty` at startup).
 
 6. Build golden VM templates (Kali, Ubuntu server, Windows eval): upload the
    ISOs — after step 8 you can do this from the PalestrIX admin screen, which
