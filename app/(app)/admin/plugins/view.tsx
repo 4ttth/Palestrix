@@ -39,7 +39,11 @@ const STATE_BADGE: Record<string, "running" | "neutral" | "failed" | "palestras"
 
 export function PluginsView() {
   const { user } = useSession();
-  const plugins = useApi<PluginOut[]>("/api/v1/plugins");
+  // plugins:manage is superadmin-only; skip the fetch for anyone else (the
+  // API 403s) so a mis-navigated admin doesn't trigger a failed request.
+  const plugins = useApi<PluginOut[]>(
+    user.role === "superadmin" ? "/api/v1/plugins" : null
+  );
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
   if (user.role !== "superadmin") {

@@ -47,6 +47,39 @@ export type PasskeyOut = {
   transports: string[];
 };
 
+export type WebhookOut = {
+  id: string;
+  url: string;
+  events: string[];
+  active: boolean;
+  created_at: string;
+};
+
+/** POST /webhooks response; `secret` (HMAC key) is shown exactly once. */
+export type WebhookCreatedOut = WebhookOut & { secret: string };
+
+export type WebhookDeliveryOut = {
+  id: string;
+  event_type: string;
+  status: "pending" | "delivered" | "failed";
+  attempts: number;
+  created_at: string;
+};
+
+/** The event catalog a webhook can subscribe to (mirrors events.EVENT_TYPES). */
+export const WEBHOOK_EVENT_TYPES = [
+  "instance.provisioned",
+  "instance.expired",
+  "flag.captured",
+  "palestras.changed",
+  "grade.posted",
+  "grade.delivered",
+  "grading.result.ready",
+  "roster.synced",
+  "writeup.published",
+  "sandbox.report.ready",
+] as const;
+
 export type PublicProfileOut = {
   handle: string;
   name: string;

@@ -56,14 +56,15 @@ const NEW_USER = {
 
 export function UsersView() {
   const { user: me } = useSession();
-  const users = useApi<UserOut[]>("/api/v1/users");
-  const tenants = useApi<TenantOut[]>("/api/v1/admin/tenants");
+  const isSuperadmin = me.role === "superadmin";
+  const forbidden = me.role !== "admin" && !isSuperadmin;
+  // Skip the fetches for a non-admin who reaches this URL directly (the API
+  // would 403); the forbidden state below renders instead.
+  const users = useApi<UserOut[]>(forbidden ? null : "/api/v1/users");
+  const tenants = useApi<TenantOut[]>(forbidden ? null : "/api/v1/admin/tenants");
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const [busyRow, setBusyRow] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
-
-  const isSuperadmin = me.role === "superadmin";
-  const forbidden = me.role !== "admin" && !isSuperadmin;
 
   const activeTenants = useMemo(
     () => (tenants.data ?? []).filter((t) => !t.archived),

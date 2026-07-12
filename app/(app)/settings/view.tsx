@@ -8,7 +8,7 @@
  */
 
 import { useState, type FormEvent } from "react";
-import { Fingerprint, Key, Plus, Trash } from "@phosphor-icons/react";
+import { Fingerprint, Key, Plus, ShareNetwork, Trash } from "@phosphor-icons/react";
 import { Topbar } from "@/components/shell/topbar";
 import {
   Card,
@@ -28,7 +28,15 @@ import { useApi } from "@/lib/api/hooks";
 import { enrollPasskey } from "@/lib/api/passkeys";
 import { useSession } from "@/lib/api/session";
 import { dateOnly } from "@/lib/format";
-import type { ApiKeyCreatedOut, ApiKeyOut, PasskeyOut, UserOut } from "@/lib/api/types";
+import type {
+  ApiKeyCreatedOut,
+  ApiKeyOut,
+  PasskeyOut,
+  UserOut,
+  WebhookCreatedOut,
+  WebhookOut,
+} from "@/lib/api/types";
+import { WEBHOOK_EVENT_TYPES } from "@/lib/api/types";
 
 type Note = { ok: boolean; text: string } | null;
 
@@ -41,6 +49,7 @@ export function SettingsView() {
         <PasswordCard />
         <PasskeysCard />
         <ApiKeysCard />
+        <WebhooksCard />
       </div>
     </>
   );
@@ -453,6 +462,159 @@ function ApiKeysCard() {
               )}
             </li>
           ))}
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
+function WebhooksCard() {
+  const hooks = useApi<WebhookOut[]>("/api/v1/webhooks");
+  const [url, setUrl] = useState("");
+  const [events, setEvents] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<Note>(null);
+  const [revealed, setRevealed] = useState<string | null>(null);
+
+  function toggle(evt: string) {
+    setEvents((cur) =>
+      cur.includes(evt) ? cur.filter((e) => e !== evt) : [...cur, evt]
+    );
+  }
+
+  async function create(e: FormEvent) {
+    e.preventDefault();
+    if (events.length === 0) {
+      setNote({ ok: false, text: "Pick at least one event to subscribe to." });
+      return;
+    }
+    setBusy(true);
+    setNote(null);
+    setRevealed(null);
+    try {
+      const created = await api.post<WebhookCreatedOut>("/api/v1/webhooks", {
+        url: url.trim(),
+        events,
+      });
+      setRevealed(created.secret);
+      setUrl("");
+      setEvents([]);
+      void hooks.refetch();
+    } catch (err) {
+      setNote({
+        ok: false,
+        text: err instanceof ApiError ? err.message : "Creation failed.",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(hook: WebhookOut) {
+    if (!window.confirm(`Delete the webhook to ${hook.url}?`)) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      await api.del(`/api/v1/webhooks/${hook.id}`);
+      void hooks.refetch();
+    } catch (err) {
+      setNote({
+        ok: false,
+        text: err instanceof ApiError ? err.message : "Deletion failed.",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <ShareNetwork size={15} className="text-accent" />
+          Webhooks
+        </CardTitle>
+        <CardDescription>
+          HTTP callbacks for platform events (docs/public-api.md). Each delivery
+          is HMAC-signed with the secret shown once at creation.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <form onSubmit={create} className="space-y-3">
+          <div className="grid gap-1.5">
+            <Label htmlFor="wh-url">Endpoint URL</Label>
+            <Input
+              id="wh-url"
+              type="url"
+              value={url}
+              required
+              placeholder="https://example.edu/hooks/palestrix"
+              onChange={(e) => setUrl(e.target.value)}
+              className="h-9 font-mono text-[13px]"
+            />
+          </div>
+          <div className="grid gap-1.5">
+            <Label>Events</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {WEBHOOK_EVENT_TYPES.map((evt) => {
+                const on = events.includes(evt);
+                return (
+                  <button
+                    key={evt}
+                    type="button"
+                    onClick={() => toggle(evt)}
+                    aria-pressed={on}
+                    className={
+                      "rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors " +
+                      (on
+                        ? "border-accent bg-accent-soft text-accent"
+                        : "border-border text-muted hover:bg-surface-2")
+                    }
+                  >
+                    {evt}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <Button type="submit" size="sm" disabled={busy}>
+            Add webhook
+          </Button>
+        </form>
+
+        {revealed && (
+          <p className="break-all rounded-(--radius-input) bg-accent-soft px-3 py-2 font-mono text-[11px] text-accent">
+            Signing secret — shown once, copy it now: {revealed}
+          </p>
+        )}
+        <Notice note={note} />
+
+        {hooks.loading && <Loading label="loading webhooks" />}
+        {hooks.error && <LoadFailed error={hooks.error} retry={hooks.refetch} />}
+        {hooks.data && hooks.data.filter((h) => h.active).length === 0 && (
+          <Empty title="No webhooks" hint="Add one to receive event callbacks." />
+        )}
+        <ul className="divide-y divide-border">
+          {(hooks.data ?? [])
+            .filter((h) => h.active)
+            .map((h) => (
+              <li key={h.id} className="flex items-center gap-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-mono text-[13px]">{h.url}</p>
+                  <p className="truncate font-mono text-[11px] text-muted">
+                    {h.events.join(", ")}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => void remove(h)}
+                >
+                  <Trash size={14} />
+                </Button>
+              </li>
+            ))}
         </ul>
       </CardContent>
     </Card>

@@ -1,10 +1,12 @@
-import Image from "next/image";
 import Link from "next/link";
 
 /*
- * Auth gateway: split screen. Form left, photographic panel right
- * (picsum seed palestrix-server-racks; swap for a real photo of the
- * on-campus rack before launch). Same locked theme as every surface.
+ * Auth gateway: split screen. Form left, decorative panel right. The panel is
+ * fully self-contained (CSS gradients + a grid motif, no external image host)
+ * so the login/register path has zero third-party runtime dependencies — this
+ * platform is meant to run self-hosted, sometimes on isolated networks, where
+ * an external CDN for a login backdrop would just be a way to break sign-in.
+ * Same locked theme as every surface.
  */
 export default function AuthLayout({
   children,
@@ -24,16 +26,31 @@ export default function AuthLayout({
           Accounts are provisioned for enrolled students and faculty.
         </p>
       </div>
-      <div className="relative hidden lg:block">
-        <Image
-          src="https://picsum.photos/seed/palestrix-server-racks/1200/1600"
-          alt="Server racks in the campus datacenter"
-          fill
-          sizes="50vw"
-          priority
-          className="object-cover"
+      <div
+        className="relative hidden overflow-hidden bg-[#0d0d10] lg:block"
+        aria-hidden
+      >
+        {/* Depth: two accent-tinted radial glows over near-black. */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(60% 50% at 78% 18%, oklch(0.55 0.13 255 / 0.35), transparent 70%), " +
+              "radial-gradient(55% 45% at 12% 88%, oklch(0.5 0.12 265 / 0.28), transparent 70%)",
+          }}
         />
-        <div className="absolute inset-0 bg-[#0d0d10]/72" />
+        {/* A faint engineering grid — the "range is real hardware" motif. */}
+        <div
+          className="absolute inset-0 opacity-[0.16]"
+          style={{
+            backgroundImage:
+              "linear-gradient(oklch(0.8 0.02 255 / 0.6) 1px, transparent 1px), " +
+              "linear-gradient(90deg, oklch(0.8 0.02 255 / 0.6) 1px, transparent 1px)",
+            backgroundSize: "44px 44px",
+            maskImage:
+              "radial-gradient(70% 70% at 50% 40%, black, transparent 100%)",
+          }}
+        />
         <div className="absolute inset-x-0 bottom-0 p-12">
           <p className="max-w-[36ch] text-2xl font-semibold leading-snug tracking-tight text-[#ebebf0]">
             The range is real hardware. Your session is a passkey away.

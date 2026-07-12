@@ -45,17 +45,21 @@ const ALIVE = new Set(["requested", "provisioning", "running", "stopped"]);
 
 export function InfrastructureView() {
   const { user } = useSession();
-  const providers = useApi<ProviderOut[]>("/api/v1/admin/providers");
-  const registry = useApi<InstanceOut[]>("/api/v1/instances?all_tenants=true");
-  const isos = useApi<StoredObjectOut[]>("/api/v1/admin/isos");
-  const tenants = useApi<TenantOut[]>("/api/v1/admin/tenants");
-  const cloud = useApi<CloudOut>("/api/v1/admin/cloud");
+  // Gate the fetches on the capability: a non-admin who lands here by URL
+  // must not fire (and 403) the admin endpoints — the UI hides what a role
+  // cannot do (docs/rbac-matrix.md). null skips the request.
+  const forbidden = user.role !== "admin" && user.role !== "superadmin";
+  const providers = useApi<ProviderOut[]>(forbidden ? null : "/api/v1/admin/providers");
+  const registry = useApi<InstanceOut[]>(
+    forbidden ? null : "/api/v1/instances?all_tenants=true"
+  );
+  const isos = useApi<StoredObjectOut[]>(forbidden ? null : "/api/v1/admin/isos");
+  const tenants = useApi<TenantOut[]>(forbidden ? null : "/api/v1/admin/tenants");
+  const cloud = useApi<CloudOut>(forbidden ? null : "/api/v1/admin/cloud");
   const [reaping, setReaping] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-
-  const forbidden = user.role !== "admin" && user.role !== "superadmin";
 
   async function runReaper() {
     setReaping(true);
