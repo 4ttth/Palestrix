@@ -1,236 +1,234 @@
 # PalestrIX
 
-A gamified cybersecurity training platform (TryHackMe + HackTheBox + KYPO
-cyber range, for classrooms), built entirely from open-source components.
-Students train on real ephemeral VMs and containers, earn and spend the
-Palestras currency, and compete in a CTF arena; teachers publish labs
-without touching infrastructure; admins run the range from one console.
+A gamified, multitenant, deployment-agnostic cyber training range for
+institutional learning — assembled entirely from open-source components.
 
-**Status: Phase 8 complete.** The repository contains the full frontend on
-a locked design theme (Phase 1), the implementation documentation for both
-deployment use cases, the FastAPI core API (Phase 2): passkey auth, RBAC,
-the versioned `/api/v1` surface, API-key + OAuth2 client-credentials auth,
-the webhook/event bus, and object storage wiring — the plugin framework
-(Phase 2b): server-plugin discovery, capability scoping, config encryption,
-crash isolation, the UI slot system, and both reference plugins under
-`plugins/` — the gamification service (Phase 3): the append-only Palestras
-ledger as the single minter/burner, per-source daily caps,
-solve-count-scaled flag awards, the first-blood bonus, writeup earning,
-streaks with a weekly checkpoint, recency-decayed community score, and the
-student-only leaderboards — orchestration (Phase 4): the provider
-abstraction, Docker and Proxmox VE adapters, the SSE log stream, and the
-TTL reaper — and the live feature surfaces (Phase 5): every product screen
-wired to `/api/v1` through a typed client (`lib/api/`), real passkey
-ceremonies, session-guarded routing, launch/stop/extend/destroy with
-server-authoritative TTL countdowns, live flag submission, votes and
-writeups, teacher publishing, and the admin console — and the malware
-sandbox module (Phase 6): a self-contained detonation service behind a
-detonator abstraction (`backend/palestrix/sandbox/`), real static
-pre-analysis of every submission (magic-byte typing, Shannon entropy,
-string/IOC extraction, EICAR detection), a verdict with a MITRE ATT&CK
-mapping, a behavior-event timeline streamed over SSE, samples and reports
-sealed at rest, and admin-gated artifact export — with the live `/sandbox`
-surface wired to all of it — and the multitenant layer with hardened
-deployments (Phase 7): the `TenantCloud` contract
-(`backend/palestrix/tenancy/`) with the registry-only LocalCloud as the
-default — the single Proxmox VE workstation path — plus optional OpenNebula
-and CloudStack adapters for a hypervisor fleet, full tenant lifecycle from the
-admin console (create materializes VLAN + CIDR, quota edits sync through,
-archive requires an idle tenant), instances/vCPU/RAM quota enforcement at
-launch with the blocking quota named, tenant VLAN tags on the Proxmox adapter
-(isolated by the host's VLAN-aware bridge) and tenant subnets on the Docker
-adapter, admin ISO forwarding to Proxmox ISO storage, additive startup
-migrations, security headers on every response,
-and a production boot guard that refuses to start misconfigured — and Canvas
-LMS integration (Phase 8): an `ExternalPlatform` adapter layer
-(`backend/palestrix/integrations/`) with Canvas as the reference adapter —
-LTI 1.3 launch, NRPS roster sync, AGS grade passback with retry, and Deep
-Linking 2.0 — wired to a live Canvas panel in the course manager, plus a
-detailed, GitHub-formatted step-by-step install guide for both deployment
-use cases. See [backend/README.md](backend/README.md) to run the API and
-[docs/plugin-development.md](docs/plugin-development.md) to write a plugin.
+Students train on real but ephemeral virtual machines and containers, earn the
+Palestras currency for genuine progress, and compete in a capture-the-flag
+arena. Teachers publish labs without touching infrastructure. Administrators
+run the whole range from one console. Every class section is an isolated
+tenant with its own network and quota.
+
+PalestrIX is the software artifact of an undergraduate research study at Holy
+Angel University. The paper that specifies it is the project's contract: where
+this codebase and that paper disagree, the paper wins.
+
+> **Working here?** Read **[PLAN.md](PLAN.md)** first. It carries the
+> reconciliation ledger, the active workstreams, and the progress log. This
+> README describes what the platform *is*; PLAN.md describes what is *left*.
+
+---
+
+## Status
+
+All eight development increments are functionally built and the backend suite
+passes **97 tests**. What remains is the evaluation apparatus the study
+requires — a Track A performance harness and the ISO/IEC 25010 questionnaire —
+neither of which exists yet. See [PLAN.md §6](PLAN.md).
+
+| # | Increment | State |
+| --- | --- | --- |
+| 1 | Frontend surfaces, locked design system, deployment docs | Built |
+| 2 | Core service: passkey auth, RBAC, versioned API, webhook/event bus, object storage | Built |
+| 3 | Plugin framework: discovery, capability scoping, encrypted config, crash isolation, UI slots | Built |
+| 4 | Gamification: ledger, caps, streaks, community score, leaderboards | Built |
+| 5 | Orchestration: provider abstraction, Docker + Proxmox VE adapters, log stream, TTL reaper | Built |
+| 6 | Feature surfaces wired to the versioned API | Built |
+| 7 | Malware sandbox: static pre-analysis, ATT&CK verdict, sealed storage | Built |
+| 8 | Multitenancy, hardening, and Canvas LTI 1.3 | Built |
+| — | **Track A performance harness** | **Not started** |
+| — | **ISO/IEC 25010 instrument** | **Not started** |
+
+---
 
 ## Run it
 
 ```bash
-# Terminal 1: the core API (see backend/README.md for the venv setup)
-cd backend
-python -m palestrix.seed                        # demo tenant, users, event
-uvicorn palestrix.main:app --reload --port 8000
+# 1 — backend dependencies, plus the reference plugin
+python -m venv .venv && source .venv/bin/activate
+pip install -r backend/requirements-dev.txt
+pip install -e plugins/palestrix-provider-demo    # required: entry-point discovery
 
-# Terminal 2: the frontend
-npm install
-npm run dev        # http://localhost:3000
-npm run build      # production build (all 14 routes compile)
+# 2 — verify
+pytest backend/tests -q                           # → 97 passed
+
+# 3 — the core API
+python -m palestrix.seed                          # demo tenant, users, event
+uvicorn palestrix.main:app --reload --port 8000   # run from backend/
+
+# 4 — the frontend
+npm install && npm run dev                        # http://localhost:3000
 ```
 
-Sign in with the development seed account `rafaela@example.edu` /
-`palestrix-dev-only!` (see `backend/palestrix/seed.py` for the other
-roles). The frontend reads `NEXT_PUBLIC_PALESTRIX_API` for the API origin,
-defaulting to `http://localhost:8000`.
+Sign in with the seed account `rafaela@example.edu` / `palestrix-dev-only!`
+(other roles in `backend/palestrix/seed.py`). The frontend reads
+`NEXT_PUBLIC_PALESTRIX_API`, defaulting to `http://localhost:8000`.
 
-Screens:
+> Skipping the `pip install -e` step makes four plugin tests fail. They are not
+> defects — the reference plugin is discovered through entry points and must be
+> installed. Tracked as G-06 in [PLAN.md](PLAN.md).
 
+> **Development defaults are not evaluation defaults.** Out of the box the
+> queue runs inline, storage is a local folder, the reaper is off, and the
+> database is SQLite. The study's Track A requires Redis, MinIO, an active
+> reaper, and PostgreSQL. `hardening.py` warns on each. Measuring under the
+> defaults measures something the paper does not describe — see G-05.
 
-| Route                   | Surface                                                    |
-| ----------------------- | ---------------------------------------------------------- |
-| `/`                     | Marketing landing (Three.js hero, taste-skill treatment)   |
-| `/login`, `/register`   | Passkey-first auth gateway                                 |
-| `/dashboard`            | Student dashboard: active instance, progress, leaderboard  |
-| `/academy`              | Paths, module roadmap, certification state                 |
-| `/courses`              | Teacher course manager + progressive-disclosure lab upload |
-| `/labs/lab-3427`        | Active ephemeral lab: connection, TTL, real log stream     |
-| `/sandbox`              | Malware sandbox: submission + behavior traces              |
-| `/community`            | Writeups, profiles, community score                        |
-| `/compete`              | CTF arena: board, flags, first blood, leaderboard          |
-| `/admin/infrastructure` | Nodes, instance registry, ISO library, tenants             |
+---
 
+## Surfaces
 
-Every product surface renders live `/api/v1` responses (Phase 5): the wire
-types live in [lib/api/types.ts](lib/api/types.ts), the client and session
-layer in [lib/api/](lib/api/). `lib/mock.ts` retains only the marketing
-page's demo log replay.
+| Route | Surface |
+| --- | --- |
+| `/` | Marketing landing |
+| `/login`, `/register` | Passkey-first authentication gateway |
+| `/dashboard` | Active instance, progress, Palestras balance, leaderboard |
+| `/academy` | Paths, module roadmap, certification state |
+| `/courses` | Teacher course manager and lab publishing |
+| `/labs/[id]` | Active ephemeral lab: connection, TTL countdown, live log stream |
+| `/sandbox` | Malware sandbox: submission, verdict, behavior timeline |
+| `/community` | Writeups, profiles, community score |
+| `/compete` | CTF arena: board, flags, first blood, leaderboard |
+| `/admin/*` | Infrastructure, users, plugins, tenants |
 
-## Design system
+Every product surface renders live `/api/v1` responses through the typed client
+in [`lib/api/`](lib/api/). The TTL countdown reads the server's expiry
+timestamp; the provisioning log is a real authenticated SSE stream.
 
-One locked theme for every surface, defined in
-`components/theme/tokens.css`: zinc-family neutrals in light and dark
-(auto via `prefers-color-scheme`), one calm electric blue accent, amber
-reserved for Palestras, pastel semantic pairs for the instance lifecycle
-(provisioning / running / stopped / expired), Geist Sans + Geist Mono, and
-a fixed radius scale (cards 12px, inputs 8px, CTAs pill). Marketing and
-auth follow the design-taste skill; dense product surfaces use customized
-shadcn-style primitives in `components/ui/`.
+---
 
-Key components:
+## Architecture
 
-- `components/three/HeroModel.tsx`: isolated, lazy-loaded 3D hero leaf.
-- `components/lab/ProvisioningLog.tsx`: real provisioning log stream over
-authenticated SSE (fetch-based; EventSource cannot carry the bearer
-token). No fake bars.
-- `components/lab/Countdown.tsx`: TTL countdown off the server's expiry
-timestamp; re-syncs on extend.
-- `components/course/upload-panel.tsx`: teacher basic/advanced publishing,
-wired to assignments + `/labs/templates`.
+A layered system, API-first — every function exists as a versioned endpoint
+before any screen calls it, so plugins and external tools consume exactly the
+contract the platform's own interface does.
 
+```
+Next.js surfaces  →  FastAPI core (/api/v1)  →  PostgreSQL · Redis · MinIO
+                            │
+                            ├── provider abstraction → Proxmox VE (KVM/LXC) · Docker
+                            ├── tenancy contract     → network + quota per tenant
+                            ├── external platform    → Canvas (LTI 1.3)
+                            └── detonator abstraction → sandbox (network-isolated)
+```
 
+The orchestration logic is written once and stays independent of the hypervisor
+beneath it. The malware sandbox is deliberately outside this stack: a separate,
+network-isolated service reached through the detonator abstraction.
+
+Four algorithms carry the behavior that distinguishes the platform from a
+conventional web application:
+
+- **Ephemeral lifecycle + TTL reaper** — instances move
+  `requested → provisioning → running → stopped → expired`; the reaper destroys
+  what has lapsed and releases the tenant quota, while a slower reconciliation
+  pass compares provider state against the registry so an orphan can never pin
+  capacity in either direction.
+- **Quota admission** — instances, vCPU, and memory are checked before a job is
+  queued, and a refusal *names the quota that blocked it*.
+- **Palestras ledger** — append-only, single minter and burner, daily cap per
+  source, awards scaled by prior solve count, first-blood bonus. Currency
+  cannot be farmed by repetition, only earned by progress.
+- **Community score** — decays with recency, so standing reflects present
+  contribution rather than accumulated history.
+
+---
 
 ## Documentation
 
+| Document | Contents |
+| --- | --- |
+| [PLAN.md](PLAN.md) | **Re-plan, reconciliation ledger, progress** |
+| [docs/architecture.md](docs/architecture.md) | System map, services, build order |
+| [docs/ephemeral-lifecycle.md](docs/ephemeral-lifecycle.md) | Instance state machine, reaper, tenancy invariants |
+| [docs/rbac-matrix.md](docs/rbac-matrix.md) | Role/capability matrix and gamification rules |
+| [docs/public-api.md](docs/public-api.md) | `/api/v1` surface, auth, webhooks, versioning |
+| [docs/install-usecase-a-baremetal.md](docs/install-usecase-a-baremetal.md) | Step-by-step install: single Proxmox VE workstation |
+| [docs/install-usecase-b-cloud-aws.md](docs/install-usecase-b-cloud-aws.md) | Step-by-step install: cloud |
+| [docs/usecase-a-baremetal.md](docs/usecase-a-baremetal.md) | Bare-metal runbook (the study's reference deployment) |
+| [docs/usecase-b-cloud-aws.md](docs/usecase-b-cloud-aws.md) | Cloud runbook |
+| [docs/lab-networking.md](docs/lab-networking.md) | Lab isolation, VLANs, student access |
+| [docs/sandbox-security.md](docs/sandbox-security.md) | Sandbox isolation and hardening |
+| [docs/managing-courses-and-users.md](docs/managing-courses-and-users.md) | Classes, modules, enrollment, roles |
+| [docs/automated-checking.md](docs/automated-checking.md) | Rubric autograding → gradebook → Canvas passback |
+| [docs/integrations-canvas-lms.md](docs/integrations-canvas-lms.md) | `ExternalPlatform` adapter, Canvas reference |
+| [docs/plugin-development.md](docs/plugin-development.md) | Manifest, lifecycle hooks, UI slots, sandboxing |
 
-| Document                                                           | Contents                                                                                           |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| [docs/architecture.md](docs/architecture.md)                       | System map, services, build order                                                                  |
-| [docs/usecase-a-baremetal.md](docs/usecase-a-baremetal.md)         | Single Proxmox VE 9.1.1 workstation runbook: registry-driven tenancy, ZFS, MinIO, Caddy, public IP/domain |
-| [docs/usecase-b-cloud-aws.md](docs/usecase-b-cloud-aws.md)         | Cloud runbook with generic and AWS names for every service                                         |
-| [docs/ephemeral-lifecycle.md](docs/ephemeral-lifecycle.md)         | Instance state machine, TTL reaper, multitenancy invariants                                        |
-| [docs/rbac-matrix.md](docs/rbac-matrix.md)                         | Full role/capability matrix + gamification rules                                                   |
-| [docs/managing-courses-and-users.md](docs/managing-courses-and-users.md) | How-to: create classes, publish modules, enroll students, manage users/roles                 |
-| [docs/automated-checking.md](docs/automated-checking.md)           | Rubric autograding: finished-vs-unfinished diff, win files, provider probes, gradebook             |
-| [docs/sandbox-security.md](docs/sandbox-security.md)               | Malware sandbox isolation and hardening                                                            |
-| [docs/public-api.md](docs/public-api.md)                           | `/api/v1` surface, auth, webhooks, versioning                                                      |
-| [docs/plugin-development.md](docs/plugin-development.md)           | Plugin manifest, lifecycle hooks, UI slots, sandboxing                                             |
-| [docs/integrations-canvas-lms.md](docs/integrations-canvas-lms.md) | `ExternalPlatform` adapter layer, Canvas LMS reference                                             |
+---
 
+## Stack
 
+Every component is open-source — a requirement of the study, not a
+convenience, since the platform must be deployable without a licensing budget.
 
+| Layer | Components |
+| --- | --- |
+| Web interface | Next.js, React, TypeScript, Tailwind CSS |
+| Core service | FastAPI, Python, Pydantic, SQLAlchemy |
+| Authentication | WebAuthn (passkeys), Argon2 |
+| Database | PostgreSQL |
+| Queue and worker | Redis, RQ |
+| Object storage | MinIO |
+| Virtualization | Proxmox VE (KVM and LXC), Docker |
+| Managed cloud *(optional)* | OpenNebula, Apache CloudStack |
+| Edge | Caddy or Traefik |
+| Integration | LTI 1.3, Canvas LMS |
+| Analysis | Jamovi, sysstat, docker stats |
 
-## Plugins (Phase 2b)
+---
+
+## Plugins
 
 Server plugins are Python packages on a versioned manifest with capability
-scopes, encrypted config, and crash isolation
-([backend/palestrix/plugins/](backend/palestrix/plugins/)). UI plugins
-mount lazy, code-split widgets into declared slots through
-`@palestrix/plugin-sdk` ([lib/plugins/](lib/plugins/),
-[components/plugins/PluginSlot.tsx](components/plugins/PluginSlot.tsx)).
-Two reference plugins live under [plugins/](plugins/) and double as
-contract tests:
+scopes, encrypted config, and crash isolation. UI plugins mount lazy,
+code-split widgets into declared slots. Two reference plugins under
+[`plugins/`](plugins/) double as contract tests:
 
-- `palestrix-provider-demo`: an instant echo instance provider; the
-provider-authoring tutorial, exercised by the backend test suite.
-- `palestrix-widget-firstblood`: a first-blood feed widget on the
-`dashboard.widgets` slot; the UI-slot tutorial.
+- **`palestrix-provider-demo`** — an instant echo instance provider; the
+  provider-authoring tutorial, exercised by the backend suite.
+- **`palestrix-widget-firstblood`** — a first-blood feed widget on the
+  `dashboard.widgets` slot; the UI-slot tutorial.
 
+See [docs/plugin-development.md](docs/plugin-development.md).
 
+---
 
-## Roadmap
+## Branches
 
-Phase 3: gamification. **Done** — ledger, caps, streaks, community score, and
-ranking in [backend/palestrix/gamification.py](backend/palestrix/gamification.py).
+| Branch | Purpose |
+| --- | --- |
+| `master` | Mainline |
+| `archive` | Frozen pre-replan snapshot @ `e008971`. **Never force-push.** |
+| `claude/replan-archive-docs-4d6ahv` | Active re-plan work |
 
-Phase 4: orchestration + TTL reaper. **Done** — 6 tests in test_orchestration.py:
-SSE log stream replay, stop/destroy transitions, TTL reaper pass (quota
-release), provision failure retry policy (up to 2 attempts), Docker adapter
-(CLI-driven with recorded runner), and Proxmox VE adapter (httpx MockTransport).
+---
 
-Phase 5: live feature surfaces. **Done** — typed API client + session layer
-(`lib/api/`), passkey login/enrollment via SimpleWebAuthn, and every surface
-live: dashboard (launch panel, ledger, leaderboard), academy (per-caller
-module completion), courses (role-aware, live counts, wired publishing),
-labs (SSE log stream, TTL, stop/extend/destroy), compete (solved state,
-cooldown handling, first-blood feed), community (votes, composer),
-admin (providers, registry, ISO library, tenants, reaper trigger), and an
-honest 501 state for the sandbox. The plugin `ScopedApi` now fetches the
-real API on the same signature. Backend: display-enrichment fields +
-`GET /admin/isos` + `GET /admin/providers` (docs/public-api.md §Display
-enrichment). Full test suite: 42 tests pass.
+## Scope and limits
 
-Phase 6: sandbox module. **Done** — 11 tests in test_sandbox.py. The
-detonator abstraction (`backend/palestrix/sandbox/`) mirrors the Phase 4
-provider registry: the built-in demo detonator runs real static analysis
-and a clearly-labelled synthetic dynamic trace, and setting
-`PALESTRIX_SANDBOX_COORDINATOR_URL` swaps in the coordinator adapter that
-drives an isolated detonation host over its single permitted port. Static
-pre-check (magic bytes, entropy, strings, IOC extraction, EICAR) is real
-and never executes the sample; the verdict carries a threat score, family,
-MITRE ATT&CK ids, and an SOC-handoff summary. The behavior timeline streams
-over SSE on the same reader as the provisioning log; samples and report
-artifacts are sealed at rest so a host AV cannot quarantine them; reports
-are private to the submitter until shared with their tenant; raw samples are
-never served and artifact export is admin-only. The `/sandbox` surface is
-live end to end, and `sandbox.report.ready` fires on the webhook/event bus.
-Full test suite: 53 tests pass.
+PalestrIX is a **training and educational platform**, not a production security
+product for defending a live network.
 
-Phase 7: multitenant layer + hardened deployments. **Done** — 8 tests in
-test_tenancy.py. The `TenantCloud` contract (`backend/palestrix/tenancy/`)
-mirrors the Phase 4/6 registries: LocalCloud (the default) allocates the
-tenant VLAN tag and a /24 from the configured pools in the registry, and
-`PALESTRIX_CLOUD_BACKEND` swaps in the OpenNebula adapter (group + VDC +
-VLAN-backed network over XML-RPC) or the CloudStack adapter (domain +
-account + isolated network over signed REST). Tenant lifecycle is fully
-API-driven: create materializes, PATCH syncs quotas through, DELETE archives
-(refused while instances are active; the VLAN/CIDR stay reserved forever).
-Launch enforces all three tenant quotas — instances, vCPU, RAM against each
-template's declared `cpu`/`ram_gb` — and the 409 names the blocking quota;
-the Proxmox adapter tags `net0` with the tenant VLAN (isolated by the host's
-VLAN-aware bridge, no external switch on a single box), the Docker adapter
-pins the tenant bridge subnet, and admin ISO uploads forward to Proxmox ISO
-storage. Hardened deployments: additive startup migrations
-(`migrations.py`), security headers on every response, and the
-`PALESTRIX_ENVIRONMENT=production` boot guard (`hardening.py`) that refuses
-to start on any readiness finding. Both runbooks updated with the tenancy
-wiring and hardening steps; the admin console gained the full tenants
-surface (create, quota edits, archive, live usage, active cloud layer).
-Full test suite: 63 tests pass.
+The sandbox performs real static analysis, but its built-in detonator produces
+a **clearly labelled simulated** dynamic trace unless a separate live
+detonation host is attached. Operating a public malware-analysis service is
+outside the study.
 
-Phase 8: Canvas LMS integration and step-by-step install documentation.
-**Done** — 8 tests in test_integrations.py, full suite 71 green. The
-`ExternalPlatform` contract (`backend/palestrix/integrations/`) mirrors the
-Phase 4/6/7 registries: nothing answers until `PALESTRIX_CANVAS_ISSUER` +
-`_CLIENT_ID` activate the Canvas adapter, so the next platform (Moodle,
-Google Classroom) follows the same path. Canvas covers all four LTI
-protocols — 1.3 launch (OIDC initiation, RS256 id_token validation, single-use
-nonces), NRPS roster sync, AGS grade passback, and Deep Linking 2.0 for the
-teacher's lab picker. Identity maps by `sub`+issuer with no silent account
-creation; roster sync pre-provisions and un-enrolls only the students it
-mapped itself; the grade-passback queue retries on the reaper heartbeat with
-exponential backoff and parks exhausted rows as `failed` for a one-click
-retry in the course panel. The frontend gained a live Canvas panel
-(link/sync/grade-queue) in the course manager and the LTI login handoff;
-`lib/api/types.ts` carries the wire types. Both runbooks
-([docs/install-usecase-a-baremetal.md](docs/install-usecase-a-baremetal.md),
-[docs/install-usecase-b-cloud-aws.md](docs/install-usecase-b-cloud-aws.md))
-now walk every step from bare OS to a running platform, GitHub-formatted.
-Full test suite: 71 tests pass; production build: all 14 routes compile.
+The reference deployment targets a single Proxmox VE workstation; the
+OpenNebula and CloudStack adapters are optional and not the focus. Canvas is
+the only LMS integrated — others can be added through the same adapter design.
+Paid subscriptions, billing, and native mobile applications are out of scope.
 
-Details in [docs/architecture.md](docs/architecture.md).
+Because the platform runs real machines, provisioning latency and concurrent
+capacity are a direct function of the host hardware and are always reported
+alongside the specification of the machine that produced them.
+
+---
+
+## Authors
+
+Raji Miguel Z. Dizon · Alexandra Sofia P. Flores · Justin Carl C. Garcia ·
+Francisco V. Olpindo IV — Holy Angel University, Cyber Security.
+
+The contribution claimed is the design and integration of open-source
+components into a platform with the properties described above, not the
+authorship of those components. Component licenses are observed and attributed.
