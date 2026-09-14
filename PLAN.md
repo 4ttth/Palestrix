@@ -50,6 +50,10 @@ validated and Track A cannot start until the harness exists.
 | ISO 25010 instrument | **does not exist** | `grep -rl "25010\|Cronbach" .` → no hits |
 | Provider kinds | Proxmox → `vm`, Docker → `container`, demo → both | `grep -n 'kinds = ' backend/palestrix/**/*.py` |
 | VirtualBox adapter | **does not exist** | `ls backend/palestrix/orchestration/` |
+| Dockerfile / compose file | **none exist anywhere** | `find . -iname 'Dockerfile*' -o -iname 'docker-compose*'` |
+| Platform startup today | six systemd units in one LXC/VM | `grep -n systemd docs/install-usecase-a-baremetal.md` |
+| Proxmox transport | HTTPS via `httpx` — containerizes cleanly | `grep -n httpx backend/palestrix/orchestration/proxmox.py` |
+| Docker provider transport | `subprocess.run([docker_binary, …])` — needs daemon access | `grep -n subprocess backend/palestrix/orchestration/docker.py` |
 
 > **Setup trap.** From a clean checkout the suite reports **4 failures** in
 > `test_plugins.py`. They are not defects. `provider-demo` is found through
@@ -216,6 +220,12 @@ A measurement taken under the defaults measures something the paper does not
 describe. Ship a single committed **evaluation profile** so every run is
 reproducible and provably the configuration the paper claims.
 
+> **Largely superseded by W6.2.** Once the web component ships as a compose
+> stack, the production settings become the *default* rather than something an
+> operator must remember to switch on. Close this item against W6.2 rather than
+> building a separate profile; what survives is the requirement to *verify*
+> that a run was taken under them.
+
 ### G-06 · Test-suite closure criterion not reproducible · **OPEN** · owner: repo
 
 Per §2. The paper's Table 3 note — "An increment is closed only when the whole
@@ -315,6 +325,70 @@ sessions were instead run on VirtualBox, that is a methodology deviation
 requiring disclosure, because the paper places those sessions on the reference
 deployment.
 
+### G-12 · The web component must be Dockerized · **OPEN** · owner: authors + repo
+
+A requirement of the paper: **the entire web component ships as Docker
+containers.** Provisioning stays outside Docker — Proxmox VE is still required —
+and everything Docker does not control must be named explicitly in the build
+documentation.
+
+**Two different jobs, one word.** Docker already appears in this project as a
+*provider adapter* that runs student lab containers (`DockerProvider`, kind
+`container`). Dockerizing the platform is a **second, unrelated role**:
+packaging and deployment. Conflating them in the paper or the runbooks would
+badly mislead a reader.
+
+| Role | What it means | Where it appears |
+| --- | --- | --- |
+| Docker as **provider** | Runs student lab containers behind the provider abstraction | Paper Table 1, "Virtualization" row |
+| Docker as **packaging** | Runs the platform itself — frontend, API, worker, datastores, edge | **Not in the paper yet** |
+
+Paper amendments required (**W6.6**):
+
+| Paper section | Needs |
+| --- | --- |
+| Table 1, Software Requirements | A deployment/packaging row for Docker, distinct from the existing virtualization row |
+| Implementation Plan | "the supporting services will be started" → name the compose stack |
+| Table 2, Hardware Requirements | A container runtime on the platform host |
+| Scope | The web component is containerized; provisioning is not |
+
+**Decisions taken** (2026-09-14):
+
+1. **Separate lab daemon.** The compose stack mounts **no** Docker socket. The
+   Docker provider reaches a *second, dedicated daemon* over `DOCKER_HOST`,
+   running only lab workloads. Socket-mounting would have given the API
+   container root-equivalent control of the host and made student lab
+   containers siblings of the platform's own containers — a breakout would
+   reach the platform stack. That is incompatible with the containment the
+   paper's Ethics section commits to.
+2. **Everything in compose** — frontend, API, worker, PostgreSQL, Redis, MinIO,
+   and the edge proxy, on named volumes.
+3. **VirtualBox demo is the one exception** — see W5.3 and the collision note
+   below.
+4. **Docker becomes the primary deployment path**; the systemd runbooks are
+   retired (**W6.5**).
+
+**Collision with the VirtualBox demo (G-11).** `VBoxManage` controls a *host*
+hypervisor and cannot be driven from inside a container. Resolved: in the
+VirtualBox demo profile the **API and worker run on the host** while
+PostgreSQL, Redis, and MinIO stay in Docker. Every other path — Proxmox
+reference, cloud — is fully containerized. Record the consequence honestly:
+the VirtualBox demo does **not** exercise the same container build the real
+deployment uses.
+
+**Consequence for Track A, in our favour.** The paper samples container-level
+consumption with `docker stats`. Once the platform itself runs in containers,
+a naive `docker stats` would conflate the platform's own cost with the labs'.
+Because lab workloads live on a *separate daemon*, the split is clean and
+unambiguous: platform containers on the local daemon, lab containers on the lab
+daemon. The harness must sample them separately and label them as such
+(**W1.1**).
+
+**Consequence for G-05.** Compose makes the production settings the *default* —
+Redis queue, MinIO, reaper on, PostgreSQL — rather than something an operator
+must remember to switch on. G-05 largely dissolves into W6.2 rather than
+needing a separate evaluation profile.
+
 ---
 
 ## 6. Workstreams
@@ -338,6 +412,11 @@ collected until it lands.
         specification, and **refuse reference-grade output under the
         VirtualBox adapter** — demo runs are quarantined, never reported as
         Track A (**G-11**)
+  - [ ] Sample the **platform stack** and the **lab workloads** separately and
+        label them. Once the platform itself runs in containers, a naive
+        `docker stats` conflates the platform's own cost with the labs'. The
+        separate lab daemon (**G-12**) makes the split clean — sample each
+        daemon on its own and never pool them.
 - [ ] **W1.2** Committed evaluation deployment profile (**G-05**)
 - [ ] **W1.3** ISO/IEC 25010 instrument, 8 sub-scales + demographics (**G-02**)
   - [ ] Item bank adapted from Dela Rosa & Abad (2025)
@@ -419,14 +498,18 @@ The three adapters isolate tenants by genuinely different mechanisms:
       arguably *stricter* (traffic never reaches a physical NIC), but it does
       not trunk, does not span hosts, and is not what the paper describes.
 
-- [ ] **W5.3** Low-spec demo profile
+- [ ] **W5.3** Low-spec demo profile — **the one partially-containerized path**
+  - [ ] PostgreSQL, Redis, and MinIO run from the compose stack; the **API and
+        worker run on the host**, because `VBoxManage` drives a host hypervisor
+        and cannot be reached from inside a container (**G-12**)
+  - [ ] State plainly in the runbook that this profile does **not** exercise the
+        same container build the Proxmox and cloud deployments use
   - [ ] Reduced tenant quotas and smaller templates sized for a laptop
   - [ ] Must still visibly exercise: TTL reaper reclamation, quota admission
         *refusing and naming the blocking quota*, two-tenant isolation,
         gamification, the CTF arena, and the sandbox
-  - [ ] Keep Redis, MinIO, and PostgreSQL real (all three run in containers on
-        a laptop) so the demo does not quietly fall back to the development
-        defaults flagged in **G-05**
+  - [ ] Keep the datastores real so the demo does not quietly fall back to the
+        development defaults flagged in **G-05**
 
 - [ ] **W5.4** `docs/demo-virtualbox.md` runbook — host prerequisites, the
       mutual-exclusion switch, seeding the demonstration tenant, and an ordered
@@ -439,6 +522,75 @@ The three adapters isolate tenants by genuinely different mechanisms:
 
 - [ ] **W5.6** Paper amendments for **G-11** (authors) — Table 1, Scope,
       Delimitations, Table 2
+
+### W6 — Dockerize the web component *(paper requirement; see G-12)*
+
+Nothing here exists today: there is no Dockerfile, no compose file, and no
+`.dockerignore` anywhere in the repository. This is greenfield.
+
+- [ ] **W6.1** Container images
+  - [ ] Frontend `Dockerfile` — multi-stage (deps → build → runner) on Next.js
+        standalone output, non-root user
+  - [ ] Core service `Dockerfile` — Python slim, non-root user
+  - [ ] The **worker reuses the API image** with a different command (RQ), so
+        the two can never drift apart in dependencies
+  - [ ] `.dockerignore` for both contexts
+
+- [ ] **W6.2** Compose stack — `frontend`, `api`, `worker`, `postgres`,
+      `redis`, `minio`, `edge`
+  - [ ] Named volumes for PostgreSQL and MinIO
+  - [ ] Healthchecks with `depends_on: condition: service_healthy`, so the API
+        never races the database
+  - [ ] Additive startup migrations on API boot (`migrations.py` already does
+        this — confirm it runs before the first request under compose)
+  - [ ] `.env`-driven `PALESTRIX_*` settings, with a committed `.env.example`
+  - [ ] **No `/var/run/docker.sock` mount on any service** — assert this in
+        review; it is the whole point of decision 1 in G-12
+  - [ ] Production settings are the compose *default*, closing **G-05**
+
+- [ ] **W6.3** Separate lab daemon wiring
+  - [ ] Add a `docker_host` setting — config currently has only `docker_binary`
+  - [ ] `DockerProvider` targets the remote daemon; keep the injectable runner
+        so tests stay offline
+  - [ ] **TLS to the remote daemon is mandatory.** An unprotected Docker daemon
+        on TCP is remote root for anyone who can reach the port. Carry
+        `DOCKER_TLS_VERIFY` and the cert paths, and refuse a plain-TCP daemon.
+  - [ ] Startup guard in the `hardening.py` pattern: Docker provider enabled,
+        running containerized, and `docker_host` empty → refuse to boot
+  - [ ] Provision the second daemon host in the runbook
+
+- [ ] **W6.4** Document the boundary — *what Docker does not control*
+
+      The authors asked for this explicitly. Each of these sits outside the
+      compose stack and must be named in the build documentation:
+
+      - The **Proxmox VE host and hypervisor** — driven over the HTTPS API, so
+        it containerizes cleanly as a *client*, but the VMs themselves are not
+        Docker's
+      - The **lab Docker daemon** on its own host (W6.3)
+      - **VirtualBox** on a demo host (G-11)
+      - The **sandbox detonation host** (`sandbox-01`) — a dedicated physical
+        machine with no route to tenant, management, or campus networks; it
+        stays outside the stack by design
+      - The **VLAN-aware bridge** and physical networking
+      - The **ZFS storage pool**
+      - **TLS certificates and DNS** — the edge proxy terminates TLS, but the
+        certificates originate outside the stack
+
+- [ ] **W6.5** Rewrite the runbooks around compose, retiring systemd
+  - [ ] `docs/install-usecase-a-baremetal.md` (617 lines) — replaces six
+        systemd units (`palestrix-api`, `palestrix-worker`,
+        `palestrix-frontend`, `minio`, PostgreSQL, redis-server)
+  - [ ] `docs/install-usecase-b-cloud-aws.md` (361 lines)
+  - [ ] `docs/usecase-a-baremetal.md`, `docs/usecase-b-cloud-aws.md`
+  - [ ] `docs/architecture.md` — the deployment view
+  - [ ] Leave no stale systemd path a reader could follow by mistake
+
+- [ ] **W6.6** Paper amendments for **G-12** (authors) — Table 1 packaging row,
+      Implementation Plan, Table 2, Scope
+
+- [ ] **W6.7** Build verification — both images build from a clean clone, and
+      the stack comes up healthy end to end
 
 ### Out of scope (decided)
 
@@ -476,6 +628,36 @@ below carries a dated entry.
 
 Newest first. One entry per session: what changed, what was verified, what is
 now blocked.
+
+### 2026-09-14 — Web component to be Dockerized
+
+- Authors added a paper requirement: **the entire web component ships as Docker
+  containers**, with provisioning explicitly outside Docker and everything
+  Docker does not control named in the build docs. Opened **G-12** and **W6**.
+- Verified it is greenfield: **no Dockerfile, compose file, or `.dockerignore`
+  exists anywhere**. Today the platform starts as six systemd units inside one
+  LXC/VM on the Proxmox host.
+- Separated the two roles Docker now plays — *provider* (runs student lab
+  containers, already in paper Table 1) and *packaging* (runs the platform
+  itself, not in the paper). Conflating them would mislead a reader, so G-12
+  carries the distinction and the Table 1 amendment.
+- Checked each adapter's transport for containerization: Proxmox is HTTPS via
+  `httpx` and containerizes cleanly; the Docker provider shells out to the
+  `docker` CLI; VirtualBox shells out to `VBoxManage`.
+- **Decisions taken:** separate lab daemon over `DOCKER_HOST` with **no socket
+  mount** (socket-mounting would give the API container root-equivalent host
+  control and make lab containers siblings of the platform stack); everything
+  in compose; Docker becomes the primary deployment path and the systemd
+  runbooks are retired.
+- **Collision found and resolved:** `VBoxManage` drives a host hypervisor and
+  cannot run from inside a container, so the VirtualBox demo profile runs the
+  API and worker on the host with datastores in Docker. Recorded that this
+  profile does not exercise the real container build.
+- Two consequences recorded: the separate lab daemon makes Track A's container
+  accounting unambiguous (W1.1 samples each daemon separately), and compose
+  makes production settings the default, largely dissolving **G-05** into W6.2.
+- **Next:** unchanged — W1.1 harness, then W1.3 instrument. W5 and W6 run in
+  parallel; W6.3's TLS requirement should not be deferred.
 
 ### 2026-09-14 — VirtualBox demo path added to scope
 

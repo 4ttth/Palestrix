@@ -39,10 +39,15 @@ neither of which exists yet. See [PLAN.md §6](PLAN.md).
 | — | **Track A performance harness** | **Not started** |
 | — | **ISO/IEC 25010 instrument** | **Not started** |
 | — | **VirtualBox demo adapter** (low-spec demo path) | **Not started** |
+| — | **Dockerized web component** (images + compose stack) | **Not started** |
 
 ---
 
 ## Run it
+
+Local development, from source. The `docker compose up` path described under
+[Deployment paths](#deployment-paths) is **not built yet** — it is W6 in
+[PLAN.md](PLAN.md). Until it lands, this is the way to run the platform.
 
 ```bash
 # 1 — backend dependencies, plus the reference plugin
@@ -137,13 +142,48 @@ conventional web application:
 
 ## Deployment paths
 
+The **web component ships as Docker containers** — frontend, core API, worker,
+PostgreSQL, Redis, MinIO, and the edge proxy, brought up with one
+`docker compose up`. **Provisioning is not Dockerized**: Proxmox VE is still
+required to run student virtual machines. What sits outside the container stack
+is listed below.
+
 Three paths, and they are **not** interchangeable.
 
-| Path | Role | Isolation mechanism | Produces reportable data? |
-| --- | --- | --- | --- |
-| **Proxmox VE workstation** | **Final / reference deployment** | VLAN tag on a VLAN-aware trunk bridge | **Yes** — this is the study's measurement surface |
-| **Cloud** | Documented alternative for renting capacity | Per-tenant subnet / namespace | Documented, not the focus |
-| **VirtualBox** | **Demo only**, for low-specification machines | Per-tenant internal network, no host NIC path | **No** |
+| Path | Role | Web component | Isolation mechanism | Produces reportable data? |
+| --- | --- | --- | --- | --- |
+| **Proxmox VE workstation** | **Final / reference deployment** | Fully containerized | VLAN tag on a VLAN-aware trunk bridge | **Yes** — the study's measurement surface |
+| **Cloud** | Documented alternative for renting capacity | Fully containerized | Per-tenant subnet / namespace | Documented, not the focus |
+| **VirtualBox** | **Demo only**, for low-specification machines | Datastores containerized; API and worker on the host | Per-tenant internal network, no host NIC path | **No** |
+
+### What Docker does **not** control
+
+The container stack runs the web component. Everything below sits outside it
+and is provisioned separately — the build documentation names each one:
+
+- The **Proxmox VE host and hypervisor.** The platform drives it over the
+  HTTPS API, so the *client* containerizes cleanly, but the virtual machines
+  themselves are not Docker's.
+- The **lab Docker daemon.** Student lab containers run on a *second,
+  dedicated daemon* on its own host, reached over `DOCKER_HOST`. The platform
+  stack mounts no Docker socket: socket-mounting would give the API container
+  root-equivalent control of the host and make student lab containers siblings
+  of the platform's own. A lab breakout must not reach the platform.
+- **VirtualBox**, on a demo host.
+- The **sandbox detonation host** (`sandbox-01`) — a dedicated physical machine
+  with no route to tenant, management, or campus networks. Outside by design.
+- The **VLAN-aware bridge** and physical networking.
+- The **ZFS storage pool**.
+- **TLS certificates and DNS.** The edge proxy terminates TLS; the certificates
+  come from outside the stack.
+
+### Why VirtualBox is the exception
+
+`VBoxManage` controls a *host* hypervisor and cannot be driven from inside a
+container. So in the VirtualBox demo profile the API and worker run on the
+host while the datastores stay in Docker. That profile therefore does **not**
+exercise the same container build the Proxmox and cloud deployments use, and
+the runbook says so.
 
 The VirtualBox path exists so the platform can be demonstrated end to end on a
 laptop. It is deliberately **not a measurement surface**: no telemetry captured
@@ -197,7 +237,8 @@ convenience, since the platform must be deployable without a licensing budget.
 | Database | PostgreSQL |
 | Queue and worker | Redis, RQ |
 | Object storage | MinIO |
-| Virtualization | Proxmox VE (KVM and LXC), Docker |
+| Virtualization *(provider)* | Proxmox VE (KVM and LXC), Docker — runs student lab instances |
+| Packaging *(deployment)* | Docker + Compose — runs the web component itself |
 | Demo virtualization | VirtualBox — low-spec demo only, not a measurement surface |
 | Managed cloud *(optional)* | OpenNebula, Apache CloudStack |
 | Edge | Caddy or Traefik |
