@@ -38,6 +38,7 @@ neither of which exists yet. See [PLAN.md §6](PLAN.md).
 | 8 | Multitenancy, hardening, and Canvas LTI 1.3 | Built |
 | — | **Track A performance harness** | **Not started** |
 | — | **ISO/IEC 25010 instrument** | **Not started** |
+| — | **VirtualBox demo adapter** (low-spec demo path) | **Not started** |
 
 ---
 
@@ -134,6 +135,33 @@ conventional web application:
 
 ---
 
+## Deployment paths
+
+Three paths, and they are **not** interchangeable.
+
+| Path | Role | Isolation mechanism | Produces reportable data? |
+| --- | --- | --- | --- |
+| **Proxmox VE workstation** | **Final / reference deployment** | VLAN tag on a VLAN-aware trunk bridge | **Yes** — this is the study's measurement surface |
+| **Cloud** | Documented alternative for renting capacity | Per-tenant subnet / namespace | Documented, not the focus |
+| **VirtualBox** | **Demo only**, for low-specification machines | Per-tenant internal network, no host NIC path | **No** |
+
+The VirtualBox path exists so the platform can be demonstrated end to end on a
+laptop. It is deliberately **not a measurement surface**: no telemetry captured
+under it may be reported as study performance data, and the performance harness
+refuses to emit reference-grade output when running under it. Container and VM
+costs differ, hosts differ, and the study reports no figure as a property of
+the platform independent of the machine that produced it.
+
+VirtualBox also isolates tenants differently. Proxmox tags a VLAN on a trunk
+bridge; VirtualBox attaches each tenant to an internal network with no path to
+a physical NIC. That is arguably stricter, but it does not trunk, does not span
+hosts, and is not the mechanism the study describes — so a VirtualBox demo must
+never be presented as having demonstrated VLAN-backed isolation.
+
+Planning and open items for this path: [PLAN.md §W5 and G-11](PLAN.md).
+
+---
+
 ## Documentation
 
 | Document | Contents |
@@ -170,6 +198,7 @@ convenience, since the platform must be deployable without a licensing budget.
 | Queue and worker | Redis, RQ |
 | Object storage | MinIO |
 | Virtualization | Proxmox VE (KVM and LXC), Docker |
+| Demo virtualization | VirtualBox — low-spec demo only, not a measurement surface |
 | Managed cloud *(optional)* | OpenNebula, Apache CloudStack |
 | Edge | Caddy or Traefik |
 | Integration | LTI 1.3, Canvas LMS |
@@ -214,9 +243,11 @@ detonation host is attached. Operating a public malware-analysis service is
 outside the study.
 
 The reference deployment targets a single Proxmox VE workstation; the
-OpenNebula and CloudStack adapters are optional and not the focus. Canvas is
-the only LMS integrated — others can be added through the same adapter design.
-Paid subscriptions, billing, and native mobile applications are out of scope.
+OpenNebula and CloudStack adapters are optional and not the focus. The
+VirtualBox path is a demonstration convenience for low-specification machines
+and carries no reportable performance data. Canvas is the only LMS integrated —
+others can be added through the same adapter design. Paid subscriptions,
+billing, and native mobile applications are out of scope.
 
 Because the platform runs real machines, provisioning latency and concurrent
 capacity are a direct function of the host hardware and are always reported

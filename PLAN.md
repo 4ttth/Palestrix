@@ -48,6 +48,8 @@ validated and Track A cannot start until the harness exists.
 | Role model | 4 roles: student, teacher, admin, **superadmin** | `backend/palestrix/models.py:45` |
 | Perf/telemetry harness | **does not exist** | `grep -rl "replicate\|sysstat" .` → no hits |
 | ISO 25010 instrument | **does not exist** | `grep -rl "25010\|Cronbach" .` → no hits |
+| Provider kinds | Proxmox → `vm`, Docker → `container`, demo → both | `grep -n 'kinds = ' backend/palestrix/**/*.py` |
+| VirtualBox adapter | **does not exist** | `ls backend/palestrix/orchestration/` |
 
 > **Setup trap.** From a clean checkout the suite reports **4 failures** in
 > `test_plugins.py`. They are not defects. `provider-demo` is found through
@@ -277,6 +279,42 @@ Verified against the body text (§Introduction through §Research Procedure):
 - MITRE ATT&CK is discussed in three places with no author-date citation,
   though Strom et al. (2020) sits unused in the list — pairing these fixes both.
 
+### G-11 · VirtualBox demo path is a sanctioned scope addition · **OPEN** · owner: authors + repo
+
+The authors have directed a **VirtualBox demo path for low-specification
+machines**, with Proxmox VE remaining the final and reference deployment.
+
+VirtualBox appears **nowhere** in the paper. This is not a gap being closed —
+it is a deliberate extension of scope, and under §1 it propagates *into* the
+document. Four sections need amending:
+
+| Paper section | Current text | Needs |
+| --- | --- | --- |
+| Table 1, Software Requirements | "Virtualization \| Proxmox VE (KVM and LXC), Docker" | Add VirtualBox, marked demo-only |
+| Scope and Delimitations | "documented for two ways of deployment: on a single Proxmox VE workstation... and on cloud services" | A third, non-reference demo path |
+| Delimitations | names OpenNebula/CloudStack as optional non-focus adapters | Same treatment for VirtualBox |
+| Table 2, Hardware Requirements | assumes a ZFS pool and a VLAN-aware bridge | Neither exists on a laptop; see W5.2 |
+
+**Measurement integrity — the hard rule.** The paper fixes the reference
+deployment as "a single Proxmox VE workstation owned by the institution" and
+states that "no figure will be presented as a property of the platform
+independent of the machine it ran on." Therefore:
+
+> **No VirtualBox telemetry may ever be reported as Track A data.** Appendix C
+> scenarios remain Docker and Proxmox VE only. The harness must refuse to emit
+> a reference-grade results file when running under the VirtualBox adapter.
+
+The demo path exists to *show the platform working* on modest hardware. It is
+not a measurement surface, and conflating the two would invalidate the
+performance chapter.
+
+**Assumption recorded** (correct it if wrong): the VirtualBox path serves
+development and demonstration — including defense presentation — while **both
+Track A and Track B run on the Proxmox reference deployment**. If respondent
+sessions were instead run on VirtualBox, that is a methodology deviation
+requiring disclosure, because the paper places those sessions on the reference
+deployment.
+
 ---
 
 ## 6. Workstreams
@@ -296,6 +334,10 @@ collected until it lands.
   - [ ] Separate Docker and Proxmox VE runs
   - [ ] Export shaped for Jamovi (descriptives, and median alongside mean for
         both latencies, as the paper's Data Analysis section requires)
+  - [ ] Stamp every record with the provider adapter **and** the host
+        specification, and **refuse reference-grade output under the
+        VirtualBox adapter** — demo runs are quarantined, never reported as
+        Track A (**G-11**)
 - [ ] **W1.2** Committed evaluation deployment profile (**G-05**)
 - [ ] **W1.3** ISO/IEC 25010 instrument, 8 sub-scales + demographics (**G-02**)
   - [ ] Item bank adapted from Dela Rosa & Abad (2025)
@@ -325,6 +367,78 @@ collected until it lands.
       hands-on sequence, seeded demonstration tenant
 - [ ] **W4.4** Jamovi analysis: descriptives for Track A; weighted means, SD,
       alpha, per-group disaggregation and Kruskal–Wallis for Track B
+
+### W5 — VirtualBox demo path *(low-spec demonstration; never a measurement surface)*
+
+Runs in parallel with W1 — it blocks nothing, and blocks on nothing. Its
+purpose is a credible end-to-end demonstration on a laptop. Read **G-11**
+before starting; the measurement rule there is not negotiable.
+
+- [ ] **W5.1** VirtualBox provider adapter (`orchestration/virtualbox.py`)
+  - [ ] Drive the `VBoxManage` CLI with an **injectable runner**, mirroring
+        `DockerProvider` exactly, so tests use a recorded runner and CI never
+        needs VirtualBox installed
+  - [ ] Satisfy the `InstanceProvider` protocol: `provision()`, `destroy()`,
+        optional `stop()` (ACPI power button, falling back to poweroff)
+  - [ ] **Resolve the kind collision.** VirtualBox wants `kinds = ("vm",)` —
+        the same kind Proxmox claims. Both are *core-owned*, so the registry's
+        guard (`existing.owner_plugin != owner_plugin` → `None != None`) **does
+        not fire**: the later `register_provider` call silently overwrites the
+        earlier one, and which VM adapter you get depends on registration
+        order in `orchestration/__init__.py`. Make the two **mutually exclusive
+        by configuration**, with an explicit startup guard that refuses to boot
+        when both `PALESTRIX_PROXMOX_ENABLED` and `PALESTRIX_VIRTUALBOX_ENABLED`
+        are set. A silent, order-dependent winner is the worst outcome here.
+  - [ ] Idempotency by instance id. VirtualBox has no Docker-style label
+        mechanism, so use a deterministic VM name (`palestrix-<instance_id>`)
+        plus guest properties for the mapping — a re-run provision reuses or
+        replaces, never duplicates (`docs/ephemeral-lifecycle.md`)
+  - [ ] Fill the access fields (host/port/proto) via a per-instance NAT
+        port-forward rule, since an internal network gives the host no route in
+  - [ ] Emit progress through `add_log` so the SSE stream behaves identically
+        to Docker and Proxmox — the demo must show a *real* provisioning log
+  - [ ] Config in the established pattern: `virtualbox_enabled: bool = False`,
+        `virtualbox_binary: str = "VBoxManage"`
+
+#### W5.2 — Tenant isolation mapping, and its honest limits
+
+The three adapters isolate tenants by genuinely different mechanisms:
+
+| Adapter | Mechanism | Tenant field used |
+| --- | --- | --- |
+| Proxmox VE | VLAN tag on a VLAN-aware trunk bridge | `tenant.vlan_id` |
+| Docker | `net-<tenant_id>` bridge with `--subnet` | `tenant.network_cidr` |
+| VirtualBox | internal network, no host NIC path | *neither* |
+
+- [ ] Map each tenant to a VirtualBox **internal network**
+      (`--intnet palestrix-<tenant_id>`), which carries no path to the host
+      NIC at all
+- [ ] Treat `tenant.vlan_id` as **not applicable** under VirtualBox — leave it
+      null and surface it as such. A demo must never imply that VLAN-backed
+      isolation was demonstrated when it was not. An internal network is
+      arguably *stricter* (traffic never reaches a physical NIC), but it does
+      not trunk, does not span hosts, and is not what the paper describes.
+
+- [ ] **W5.3** Low-spec demo profile
+  - [ ] Reduced tenant quotas and smaller templates sized for a laptop
+  - [ ] Must still visibly exercise: TTL reaper reclamation, quota admission
+        *refusing and naming the blocking quota*, two-tenant isolation,
+        gamification, the CTF arena, and the sandbox
+  - [ ] Keep Redis, MinIO, and PostgreSQL real (all three run in containers on
+        a laptop) so the demo does not quietly fall back to the development
+        defaults flagged in **G-05**
+
+- [ ] **W5.4** `docs/demo-virtualbox.md` runbook — host prerequisites, the
+      mutual-exclusion switch, seeding the demonstration tenant, and an ordered
+      walkthrough. State at the top that this path produces **no reportable
+      performance data**.
+
+- [ ] **W5.5** Adapter tests in `test_orchestration.py`, recorded-runner style:
+      provision/stop/destroy, idempotent re-provision, internal-network
+      attachment, and the both-adapters-enabled startup refusal
+
+- [ ] **W5.6** Paper amendments for **G-11** (authors) — Table 1, Scope,
+      Delimitations, Table 2
 
 ### Out of scope (decided)
 
@@ -362,6 +476,26 @@ below carries a dated entry.
 
 Newest first. One entry per session: what changed, what was verified, what is
 now blocked.
+
+### 2026-09-14 — VirtualBox demo path added to scope
+
+- Authors directed a **VirtualBox demo path for low-spec machines**, with
+  Proxmox VE remaining the final and reference deployment. Opened **G-11** and
+  workstream **W5**.
+- VirtualBox is absent from the paper, so this propagates into the document:
+  Table 1, Scope, Delimitations, and Table 2 all need amending (**W5.6**).
+- Established the measurement rule: **no VirtualBox telemetry is reportable as
+  Track A data**. Added a matching guardrail to W1.1 — the harness stamps
+  adapter and host spec, and refuses reference-grade output under VirtualBox.
+- Verified a design hazard before planning around it: VirtualBox needs the
+  `vm` kind that Proxmox already claims, and because both are core-owned the
+  registry's conflict guard never fires — the later registration silently wins.
+  W5.1 therefore requires config-level mutual exclusion and a startup refusal.
+- Recorded that tenant isolation has no VLAN analogue under VirtualBox;
+  `tenant.vlan_id` is not-applicable there and must not imply otherwise.
+- **Assumption to confirm:** Track A *and* Track B both stay on Proxmox; the
+  VirtualBox path is for development and demonstration only.
+- **Next:** unchanged — W1.1 harness, then W1.3 instrument. W5 runs in parallel.
 
 ### 2026-09-14 — Re-plan established
 
