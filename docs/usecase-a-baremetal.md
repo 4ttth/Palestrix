@@ -39,7 +39,7 @@ Internet
    |     +-- tenant VLAN 101  -> ephemeral lab VMs/containers  (class B, 10.24.1.0/24)
    |     +-- sandbox VLAN 666 -> isolated detonation VM        (no route to tenants/mgmt)
    |
- [ ZFS ]  rpool (system) · tank (VM disks, ISOs, MinIO data, snapshots)
+ [ storage ]  local-lvm (LVM-thin: VM + lab disks) · local (dir: ISOs, MinIO data, dumps)
 ==================================================================================
 ```
 
@@ -56,10 +56,10 @@ labs are the load; the platform services are light.
 
 | Role | Minimum (one section) | Comfortable (2 sections + a CTF event) |
 |---|---|---|
-| The workstation | 16-core, 128 GB RAM, 2 TB SSD | 24–32-core, 256 GB RAM, 4 TB NVMe (ZFS mirror) |
+| The workstation | 16-core, 128 GB RAM, 2 TB SSD | 24–32-core, 256 GB RAM, 4 TB NVMe or a hardware-RAID volume |
 | Platform LXC/VM | 4 vCPU, 8 GB RAM, 60 GB | 8 vCPU, 16 GB RAM, 100 GB |
 | Headroom for labs | the rest | the rest, sized to peak concurrent launches |
-| Storage layout | one ZFS pool | `rpool` (system) + `tank` (labs, ISOs, MinIO) on NVMe mirror |
+| Storage layout | the installer default: LVM-thin `local-lvm` (VM/lab disks) + `local` (ISOs, MinIO, dumps) | same, on NVMe or a RAID10/RAID6 volume — or `rpool` + a ZFS `tank` pool if the box has spare disks |
 | Network | 1 GbE uplink; VLAN-aware `vmbr0` | 1–10 GbE uplink; VLAN-aware `vmbr0` |
 
 No VLAN-capable switch is required: the tenant VLAN tags are filtered by the
@@ -68,17 +68,39 @@ enough.
 
 ## Layer 1: Proxmox VE (the whole hypervisor base)
 
-1. Install **Proxmox VE 9.1.1** on the workstation from the official ISO. Use
-   ZFS (RAID1/RAIDZ, or single-disk on a modest box) for the system pool at
-   install time.
-2. Create the data pool and ISO storage (this box holds everything — VM disks,
-   ISOs, and the MinIO object store all live on `tank`):
+1. Install **Proxmox VE 9.1.1** on the workstation from the official ISO.
+   The installer's default LVM layout is the baseline here: it gives you
+   `local` (a directory store for ISOs, templates and dumps) and `local-lvm`
+   (an LVM-thin pool for VM and lab disks), both carved out of the system
+   volume. On a box behind a hardware RAID controller — a single logical
+   volume presented to the OS — this is the only sensible layout, because ZFS
+   wants raw disks it owns.
+2. Confirm the two storages exist and carry the right content types; nothing
+   else has to be created:
 
    ```
-   zpool create tank mirror /dev/nvme1n1 /dev/nvme2n1
-   pvesm add zfspool tank-vm   --pool tank/vm   --content images,rootdir
-   pvesm add dir     tank-iso  --path /tank/iso --content iso
+   pvesm status
+   pvesm set local     --content iso,vztmpl,backup,import
+   pvesm set local-lvm --content images,rootdir
    ```
+
+   Lab disks, golden templates and the platform guest all land on
+   `local-lvm`; ISOs and the MinIO data directory live under `local`
+   (`/var/lib/vz`).
+
+   > **ZFS variant.** If the workstation has spare disks that Proxmox can own
+   > directly, a ZFS pool is the better choice — it buys you snapshots and
+   > `zfs send` replication. Install with ZFS for the system pool, then add a
+   > data pool and point the storage names below at it:
+   >
+   > ```
+   > zpool create tank mirror /dev/nvme1n1 /dev/nvme2n1
+   > pvesm add zfspool tank-vm   --pool tank/vm   --content images,rootdir
+   > pvesm add dir     tank-iso  --path /tank/iso --content iso
+   > ```
+   >
+   > Everywhere this document says `local-lvm` / `local`, read `tank-vm` /
+   > `tank-iso` instead, and set `PALESTRIX_PROXMOX_ISO_STORAGE` to match.
 
    Single node — there is no `pvecm create`/`pvecm add` step.
 3. Make `vmbr0` VLAN-aware so tenant tags isolate labs in software, with no
@@ -158,7 +180,7 @@ equally fine). None of them touch the tenant VLANs.
 | Core API | FastAPI + uvicorn | port 8000 |
 | Worker | RQ worker | `python -m palestrix.worker`; owns the TTL reaper + grade-passback retries |
 | Queue/cache | Redis 7 | AOF persistence on |
-| Database | PostgreSQL 16 | on a ZFS dataset with `recordsize=16k`; nightly `pg_dump` to MinIO |
+| Database | PostgreSQL 16 | on its own filesystem (a ZFS dataset with `recordsize=16k` if you run ZFS); nightly `pg_dump` to MinIO |
 | Object storage | MinIO | buckets: `isos`, `lab-archives`, `writeups`, `sandbox-samples`, `sandbox-reports`, `backups` |
 | Edge | Caddy (or Traefik) | see Layer 4 |
 
@@ -223,9 +245,12 @@ Everything is on one box, so backups must leave it:
   only copy of ISOs, archives, and reports.
 - Proxmox templates: `vzdump` weekly for the golden templates only (ephemeral
   instances are never backed up, by design).
-- ZFS: hourly snapshots on `tank`; `zfs send` nightly to an off-box target.
-  On a single workstation, an off-box ZFS replica is your disaster recovery —
-  keep it current.
+- Host state: `/etc/pve`, `/etc/network/interfaces` and the storage
+  definitions to the same off-box target as the database dumps.
+- On LVM-thin there is no cheap snapshot-and-replicate path, so the `pg_dump`
+  and `mc mirror` copies above *are* the disaster recovery — verify them.
+  (On the ZFS variant, take hourly snapshots on `tank` and `zfs send` nightly
+  to an off-box target instead; that replica then becomes your recovery.)
 
 ## Hardening checklist
 
