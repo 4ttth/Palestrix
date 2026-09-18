@@ -7,6 +7,7 @@ OpenAPI: http://localhost:8000/api/v1/openapi.json
 Swagger UI: http://localhost:8000/api/v1/docs
 """
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI
@@ -62,6 +63,32 @@ async def lifespan(app: FastAPI):
     from .migrations import upgrade
 
     upgrade(engine)
+
+    # The academy catalog ships in the repository (academy_catalog.py), so
+    # the four learning paths exist on any database this app is pointed at
+    # without a manual seed step. Insert-and-reconcile only: no path,
+    # module, or completion is ever deleted here.
+    if get_settings().academy_catalog_autoload:
+        from .academy_catalog import ensure_catalog
+        from .db import SessionLocal as _SessionLocal
+
+        catalog_db = _SessionLocal()
+        try:
+            report = ensure_catalog(catalog_db)
+            catalog_db.commit()
+            if report["paths_created"] or report["modules_created"]:
+                logging.getLogger("palestrix.academy").info(
+                    "academy catalog: %d path(s), %d module(s) published",
+                    len(report["paths_created"]),
+                    len(report["modules_created"]),
+                )
+        except Exception:  # pragma: no cover - never block startup on content
+            catalog_db.rollback()
+            logging.getLogger("palestrix.academy").exception(
+                "academy catalog could not be applied"
+            )
+        finally:
+            catalog_db.close()
 
     # Phase 2b: discover plugins (entry points + PALESTRIX_PLUGIN_PATHS)
     # and re-activate the ones the database says are enabled.

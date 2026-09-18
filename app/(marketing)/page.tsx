@@ -63,11 +63,18 @@ const lifecycle = [
   },
 ];
 
+/*
+ * The four paths the academy actually ships. They are real rows, not
+ * marketing copy: backend/palestrix/academy_catalog.py holds the same four
+ * slugs with these module counts and publishes them at API startup.
+ * Change one side, change the other — backend/tests/test_academy_catalog.py
+ * asserts the two agree.
+ */
 const pathsPreview = [
-  { title: "SOC Analyst", detail: "14 modules" },
-  { title: "Web Exploitation", detail: "12 modules" },
-  { title: "Network Defense", detail: "10 modules" },
-  { title: "Digital Forensics", detail: "11 modules" },
+  { slug: "soc-analyst", title: "SOC Analyst", detail: "14 modules · 38h" },
+  { slug: "web-exploitation", title: "Web Exploitation", detail: "12 modules · 30h" },
+  { slug: "network-defense", title: "Network Defense", detail: "10 modules · 26h" },
+  { slug: "digital-forensics", title: "Digital Forensics", detail: "11 modules · 32h" },
 ];
 
 export default function LandingPage() {
@@ -278,7 +285,7 @@ export default function LandingPage() {
             <ul className="mt-8 space-y-3">
               {pathsPreview.map((p) => (
                 <li
-                  key={p.title}
+                  key={p.slug}
                   className="flex items-center justify-between border-b border-border pb-3 text-sm last:border-b-0"
                 >
                   <span className="flex items-center gap-2.5 font-medium">

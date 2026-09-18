@@ -42,8 +42,8 @@ validated and Track A cannot start until the harness exists.
 
 | Fact | Value | How to re-verify |
 | --- | --- | --- |
-| Backend test suite | **97 passed, 0 failed** | `pytest backend/tests -q` |
-| Backend size | 75 Python files, ~15,550 lines | `find backend -name '*.py' \| wc -l` |
+| Backend test suite | **101 passed, 0 failed** | `pytest backend/tests -q` |
+| Backend size | 77 Python files, ~15,800 lines | `find backend -name '*.py' \| wc -l` |
 | Frontend routes | 16 pages | `find app -name 'page.tsx'` |
 | Role model | 4 roles: student, teacher, admin, **superadmin** | `backend/palestrix/models.py:45` |
 | Perf/telemetry harness | **does not exist** | `grep -rl "replicate\|sysstat" .` → no hits |
@@ -58,7 +58,7 @@ validated and Track A cannot start until the harness exists.
 > ```bash
 > pip install -r backend/requirements-dev.txt
 > pip install -e plugins/palestrix-provider-demo   # ← the undocumented step
-> pytest backend/tests -q                          # → 97 passed
+> pytest backend/tests -q                          # → 101 passed
 > ```
 >
 > This matters beyond convenience: the paper's Table 3 closes every increment
@@ -476,6 +476,33 @@ below carries a dated entry.
 
 Newest first. One entry per session: what changed, what was verified, what is
 now blocked.
+
+### 2026-09-18 — Academy catalog shipped in version control
+
+- The landing page had advertised four learning paths while the academy served
+  one: the old seed wrote `soc-analyst` with five modules and nothing else, so
+  `/academy` and `/dashboard` were near-empty on every deployment that had run
+  it. The four paths are now content in the repository —
+  `backend/palestrix/academy_catalog.py` holds **SOC Analyst** (14 modules, 38
+  h), **Web Exploitation** (12, 30 h), **Network Defense** (10, 26 h), and
+  **Digital Forensics** (11, 32 h).
+- The API applies the catalog during startup (`ensure_catalog`, gated by
+  `PALESTRIX_ACADEMY_CATALOG_AUTOLOAD`, default on), so publishing catalog
+  changes to a live deployment is `git pull` + restart. `palestrix.seed` calls
+  the same function, which keeps the demo data and the shipped content from
+  drifting apart.
+- Reconciliation is insert-and-adopt: paths are keyed by slug, modules by title
+  within their path, positions are renumbered to the file's order, and nothing
+  is deleted. Verified against a simulated pre-existing database — the five old
+  `soc-analyst` modules kept their ids, a student's `ModuleCompletion` still
+  resolved, and the capstone moved from position 4 to 13 without duplication.
+- A teacher-added module is never reordered away: it keeps its relative order
+  after the catalog's modules.
+- The landing page's preview list now carries the same counts and hours, and
+  `backend/tests/test_academy_catalog.py` asserts the two sides agree, so the
+  marketing copy cannot drift from what the academy actually serves.
+- Verified: **101 passed** (4 new), `tsc --noEmit` clean.
+- **Next:** unchanged — W1.1 harness, then W1.3 instrument.
 
 ### 2026-09-14 — VirtualBox demo path added to scope
 
