@@ -45,7 +45,18 @@ def _sni_from_client_hello(payload: bytes) -> str | None:
             body = payload[i + 4:i + 4 + elen]
             if etype == 0x0000 and len(body) >= 5:
                 name_len = int.from_bytes(body[3:5], "big")
-                return body[5:5 + name_len].decode("idna", "ignore") or None
+                raw = body[5:5 + name_len]
+                try:
+                    # Strict on purpose: "idna" is the one codec that raises
+                    # on a lenient error handler instead of being lenient, so
+                    # decode(..., "ignore") threw UnicodeError on every
+                    # ClientHello and this function silently returned None --
+                    # the SNI branch and T1573 never fired at all.
+                    return raw.decode("idna") or None
+                except Exception:
+                    # Malformed or non-punycode label: keep the indicator
+                    # rather than losing it entirely.
+                    return raw.decode("ascii", "ignore") or None
             i += 4 + elen
     except Exception:
         return None

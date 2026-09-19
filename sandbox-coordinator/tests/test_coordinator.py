@@ -108,3 +108,48 @@ def test_wall_clock_below_the_window_wins():
         boot_grace_seconds=45, detonation_seconds=180, wall_clock_seconds=60
     )
     assert detonation_sleep(s, elapsed=0.0) == 60.0
+
+
+def _client_hello(server_name: str) -> bytes:
+    """A minimal TLS ClientHello carrying one SNI extension."""
+    import struct
+
+    name = server_name.encode("ascii")
+    sni = struct.pack(">H", len(name) + 3) + b"\x00" + struct.pack(">H", len(name)) + name
+    ext = struct.pack(">HH", 0x0000, len(sni)) + sni
+
+    body = b"\x03\x03" + b"\xab" * 32          # version + random
+    body += b"\x00"                             # session id length
+    body += struct.pack(">H", 2) + b"\x13\x01"  # cipher suites
+    body += b"\x01\x00"                         # compression methods
+    body += struct.pack(">H", len(ext)) + ext
+
+    handshake = b"\x01" + len(body).to_bytes(3, "big") + body
+    return b"\x16\x03\x01" + struct.pack(">H", len(handshake)) + handshake
+
+
+def test_sni_is_extracted_from_a_client_hello():
+    """Regression: the extractor decoded the host with .decode("idna",
+    "ignore"), and "idna" is the one codec that raises on a lenient error
+    handler rather than being lenient. Every ClientHello therefore threw
+    UnicodeError into the function's own except and returned None, so the
+    TLS branch and T1573 were unreachable in production."""
+    from coordinator.pcapparse import _sni_from_client_hello
+
+    assert _sni_from_client_hello(_client_hello("c2.example")) == "c2.example"
+    assert _sni_from_client_hello(_client_hello("a.b.c.example")) == "a.b.c.example"
+
+
+def test_sni_extractor_rejects_non_tls_payloads():
+    from coordinator.pcapparse import _sni_from_client_hello
+
+    assert _sni_from_client_hello(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n") is None
+    assert _sni_from_client_hello(b"\x16\x03\x01") is None
+    assert _sni_from_client_hello(b"") is None
+
+
+def test_tls_sni_drives_the_verdict():
+    """With the extractor working, a ClientHello must reach T1573."""
+    out = assess({}, NetFacts(sni=["c2.example"], packets=1), ran=True)
+    assert "T1573" in out["mitre"]
+    assert out["score"] >= 20
