@@ -9,7 +9,7 @@ startup is the contract.
 
 from collections.abc import Iterator
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import get_settings
@@ -25,7 +25,19 @@ def _make_engine():
     kwargs: dict = {"pool_pre_ping": True}
     if url.startswith("sqlite"):
         kwargs["connect_args"] = {"check_same_thread": False}
-    return create_engine(url, **kwargs)
+    eng = create_engine(url, **kwargs)
+    if url.startswith("sqlite"):
+        # SQLite ignores foreign keys unless asked, so development and the
+        # test suite would silently accept writes PostgreSQL rejects -- the
+        # exact gap that let a bad INSERT order through to production. Turn
+        # enforcement on so dev fails the same way prod does.
+        @event.listens_for(eng, "connect")
+        def _sqlite_enforce_foreign_keys(dbapi_connection, _record):
+            cur = dbapi_connection.cursor()
+            cur.execute("PRAGMA foreign_keys=ON")
+            cur.close()
+
+    return eng
 
 
 engine = _make_engine()

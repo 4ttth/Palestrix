@@ -59,6 +59,7 @@ def submit_run(
     signal, not a silent no-op; docs/sandbox-security.md)."""
     import io
 
+    from ..config import get_settings
     from ..models import SandboxRun, SandboxRunState, SandboxSample
     from ..orchestration.queue import enqueue
     from ..storage import get_storage
@@ -84,6 +85,13 @@ def submit_run(
             storage_key=f"{SAMPLE_BUCKET}/{sha256}",
         )
         db.add(sample)
+        # Flush before the run row exists: SandboxRun.sample_sha256 is a bare
+        # ForeignKey with no relationship() to tie the two mappers together,
+        # so the unit of work has no dependency to sort on and falls back to
+        # mapper sort key -- which puts SandboxRun *before* SandboxSample.
+        # On PostgreSQL that INSERT order is a ForeignKeyViolation; SQLite
+        # only hides it because it does not enforce foreign keys by default.
+        db.flush()
 
     run = SandboxRun(
         id=f"sbx-{secrets.token_hex(4)}",
@@ -98,6 +106,17 @@ def submit_run(
     if enqueue_job:
         # Inline backend: detonation finishes before we return. Redis backend:
         # the worker picks it up and the client follows the SSE event stream.
-        enqueue("sandbox.detonate", run_id=run.id)
+        #
+        # The timeout is not decoration. A live detonation is dominated by the
+        # one blocking call to the coordinator, so the job must be allowed to
+        # outlive that call's own timeout -- otherwise RQ's 180s default kills
+        # the worker mid-detonation and the run is stranded in ``static``
+        # forever, which the UI renders as permanently in flight.
+        settings = get_settings()
+        enqueue(
+            "sandbox.detonate",
+            run_id=run.id,
+            job_timeout=int(settings.sandbox_coordinator_timeout_seconds) + 60,
+        )
         db.refresh(run)
     return run

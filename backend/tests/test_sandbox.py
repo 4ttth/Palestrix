@@ -216,3 +216,54 @@ def test_resubmission_is_flagged(client, student, student2):
     # Same SHA-256, a later run: the second submission is flagged.
     assert second["sample_sha256"] == first["sample_sha256"]
     assert second["resubmission"] is True
+
+
+def test_sample_row_lands_before_the_run_that_references_it(client, student):
+    """SandboxRun.sample_sha256 is a bare ForeignKey with no relationship()
+    tying the two mappers together, so SQLAlchemy's unit of work has no
+    dependency to sort on and falls back to mapper sort key — which orders
+    SandboxRun *before* SandboxSample. PostgreSQL rejects that INSERT order
+    with a ForeignKeyViolation; SQLite only hid it until db.py turned
+    foreign key enforcement on."""
+    from palestrix.db import SessionLocal
+    from palestrix.models import SandboxRun, SandboxSample
+
+    resp = _submit(client, student, "order.txt", b"insert ordering matters\n")
+    assert resp.status_code == 201, resp.text
+    report = resp.json()
+
+    db = SessionLocal()
+    try:
+        run = db.get(SandboxRun, report["id"])
+        assert run is not None
+        # The referenced row must actually be there, not merely referenced.
+        assert db.get(SandboxSample, run.sample_sha256) is not None
+    finally:
+        db.close()
+
+
+def test_detonation_job_is_queued_with_its_own_timeout(client, student, monkeypatch):
+    """RQ's default job timeout is 180s (rq.Queue.DEFAULT_TIMEOUT), shorter
+    than a live detonation's boot grace plus window. Without an explicit
+    timeout the worker is killed mid-run and the row is stranded in
+    ``static`` forever, which the UI renders as permanently in flight."""
+    from palestrix.config import get_settings
+    from palestrix.orchestration import queue as queue_mod
+
+    seen: dict = {}
+    real = queue_mod.enqueue
+
+    def spy(name, *, job_timeout=None, **kwargs):
+        seen["name"] = name
+        seen["job_timeout"] = job_timeout
+        return real(name, job_timeout=job_timeout, **kwargs)
+
+    monkeypatch.setattr(queue_mod, "enqueue", spy)
+    assert _submit(client, student, "timeout.txt", b"benign\n").status_code == 201
+
+    assert seen["name"] == "sandbox.detonate"
+    assert seen["job_timeout"] is not None, "would inherit RQ's 180s default"
+    assert seen["job_timeout"] > 180
+    # The job is dominated by the one blocking call to the coordinator, so it
+    # has to outlive that call's own timeout.
+    assert seen["job_timeout"] > get_settings().sandbox_coordinator_timeout_seconds
