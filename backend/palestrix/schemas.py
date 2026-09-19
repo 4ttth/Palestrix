@@ -510,6 +510,19 @@ class SandboxShareIn(BaseModel):
     shared: bool
 
 
+class SandboxCommandIn(BaseModel):
+    """A command-line submission.
+
+    The command is analysed and detonated exactly like an uploaded script --
+    it is stored as the sample's bytes, so dedup, sealing, the report and the
+    artifact trail all work unchanged. Obfuscated input is expected and is the
+    normal case, not an error.
+    """
+
+    command: str = Field(min_length=1, max_length=64_000)
+    shell: str = Field(default="powershell", pattern=r"^powershell$")
+
+
 class SandboxStatusOut(BaseModel):
     """What the /sandbox surface renders instead of guessing from a 501: is a
     live detonation host wired, or is the demo detonator answering?"""
@@ -519,6 +532,8 @@ class SandboxStatusOut(BaseModel):
     live: bool  # True only when a real isolated host is configured
     max_sample_mb: int
     wall_clock_seconds: int
+    max_command_chars: int = 64_000
+    shells: list[str] = []          # command kinds this deployment detonates
 
 
 # -- admin ----------------------------------------------------------------------------

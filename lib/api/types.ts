@@ -379,6 +379,8 @@ export type SandboxStatusOut = {
   live: boolean;
   max_sample_mb: number;
   wall_clock_seconds: number;
+  max_command_chars: number;
+  shells: string[];          // command kinds this deployment detonates
 };
 
 /* -- integrations (Phase 8) ------------------------------------------------ */

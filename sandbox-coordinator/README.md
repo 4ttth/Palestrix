@@ -8,8 +8,10 @@ live detonation. See [docs/sandbox-security.md](../docs/sandbox-security.md).
 One request is one throwaway Windows VM:
 
 ```
-POST /detonate  (multipart: sample, sha256, filename; Bearer auth)
-  -> build payload ISO containing the sample + run.bat
+POST /detonate  (multipart: sample, sha256, filename, kind; Bearer auth)
+  -> kind=file:       unwrap the archive if it is one, pick the payload
+     kind=powershell: peel encoding layers, write the script to the ISO
+  -> build payload ISO containing the payload + run.bat
   -> clone the Windows template to a fresh VMID
   -> pin net0 to the air-gapped bridge, attach the ISO, start
   -> tcpdump the clone's tap for the detonation window
@@ -35,6 +37,42 @@ which is itself under the detonation job's RQ timeout. Each layer needs
 headroom over the one below, or the outer one kills a run the inner one was
 about to finish.
 
+## Submission kinds
+
+**Files.** A zip, 7z, tar or gzip container is opened before anything is
+written to the ISO, trying `""`, `infected`, `malware`, `virus` and
+`p@ssw0rd` in that order. Unwrapping is not a convenience: the container is
+what would otherwise be copied to the guest, where Windows has no handler
+for it, so the run looks inert for a reason unrelated to the sample. It also
+kills a false positive -- compressed containers sit near 8.0 bits/byte by
+construction, so every archive tripped the packed heuristic and inherited a
+meaningless T1027. The payload is chosen by extension first (executables and
+scripts beat documents), then by size. RAR needs the `unrar` binary and is
+reported as unopened rather than silently skipped.
+
+Extraction is hostile-input handling. Members are refused if they are
+absolute, drive-qualified or contain `..`; entry count, per-entry size and
+total size are all capped, and the decision is made from the archive header
+so a bomb is never inflated in the first place.
+
+**PowerShell commands.** `kind=powershell` treats the uploaded bytes as a
+command line. It is written to the ISO as `payload.ps1` and run with
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File`.
+
+The command is **never interpolated into run.bat**. That is the security
+boundary, not a style preference: the command is attacker-controlled text,
+and a submission carrying a quote and an ampersand would otherwise execute
+on *this host* at ISO-build time, turning an analysis request into remote
+code execution against the hypervisor. It travels as inert bytes and is only
+ever interpreted inside the throwaway guest.
+
+Before it runs, `psanalyse` peels base64 layers (UTF-16LE first, which is
+what `-EncodedCommand` emits) up to 8 deep and reads every layer for
+download cradles, AMSI tampering, injection primitives, persistence and
+LOLBin transfers. This matters most when detonation tells you nothing: a
+cradle whose C2 is unreachable does nothing observable at all, but its URL
+is sitting in layer two.
+
 ## Why the capture works with no network
 
 The sandbox bridge has no gateway, no SNAT and no DHCP, so nothing a sample
@@ -50,6 +88,7 @@ is derived from what the sample *attempted*.
 | `tcpdump` | capture on `tap<vmid>i0` |
 | `genisoimage` | build the payload ISO |
 | `scapy` (pip) | parse the pcap |
+| `py7zr` (pip) | open 7-Zip sample archives |
 | `imagemagick` or `netpbm` | optional: PPM console grab to PNG |
 
 ## Template prerequisites

@@ -37,6 +37,7 @@ logger = logging.getLogger("palestrix.sandbox")
 
 SAMPLE_BUCKET = "sandbox-samples"
 REPORT_BUCKET = "sandbox-reports"
+COMMAND_MEDIA_TYPE = "text/x-powershell"
 
 
 @job("sandbox.detonate")
@@ -81,8 +82,13 @@ def detonate(run_id: str) -> None:
             return
 
         detonator = get_detonator()
+        # The submission kind rides on the sample's media type rather than a
+        # new column, so a command needs no schema change to round-trip.
+        kind = "powershell" if sample.media_type == COMMAND_MEDIA_TYPE else "file"
         try:
-            result = detonator.analyze(sample.filename, run.sample_sha256, data)
+            result = detonator.analyze(
+                sample.filename, run.sample_sha256, data, kind=kind
+            )
         except DetonatorUnavailable as exc:
             add("system", "alert", f"detonation host unavailable: {exc}")
             _fail(db, run, str(exc))

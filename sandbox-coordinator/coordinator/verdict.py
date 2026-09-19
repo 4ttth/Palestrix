@@ -12,12 +12,26 @@ from .pcapparse import NetFacts
 WELL_KNOWN = {80, 443, 53, 8080, 8443}
 
 
-def assess(static: dict, net: NetFacts, ran: bool) -> dict:
-    score = 0
-    mitre: list[str] = []
-    reasons: list[str] = []
+def assess(
+    static: dict,
+    net: NetFacts,
+    ran: bool,
+    extra_score: int = 0,
+    extra_mitre: tuple[str, ...] = (),
+    extra_reasons: tuple[str, ...] = (),
+) -> dict:
+    """Score one detonation.
 
-    if static.get("eicar"):
+    ``extra_*`` carry findings from an analyser that is not the binary static
+    check -- today the PowerShell peeler, whose techniques are established
+    before the VM ever boots. They fold in here rather than being scored
+    separately so one command produces one verdict, not two.
+    """
+    score = extra_score
+    mitre: list[str] = list(extra_mitre)
+    reasons: list[str] = list(extra_reasons)
+
+    if static.get("eicar") and not extra_mitre:
         return {
             "verdict": "malicious",
             "score": 100,

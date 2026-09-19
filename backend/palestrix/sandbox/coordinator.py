@@ -12,7 +12,9 @@ host; that half is deployment code, not part of this repository):
 
     POST {url}/detonate
       headers: Authorization: Bearer <coordinator token>
-      body:    multipart {sha256, filename, sample}
+      body:    multipart {sha256, filename, kind, sample}
+               kind is "file" or "powershell"; for a command submission the
+               sample bytes are the command text itself
       200 ->   {verdict, score, family, mitre[], iocs{}, static{},
                 summary, events[], artifacts[{name,kind,media_type,b64}]}
 
@@ -52,14 +54,16 @@ class CoordinatorDetonator:
             timeout=settings.sandbox_coordinator_timeout_seconds,
         )
 
-    def analyze(self, filename: str, sha256: str, data: bytes) -> AnalysisResult:
+    def analyze(
+        self, filename: str, sha256: str, data: bytes, kind: str = "file"
+    ) -> AnalysisResult:
         import httpx
 
         client = self._http()
         try:
             resp = client.post(
                 "/detonate",
-                data={"sha256": sha256, "filename": filename},
+                data={"sha256": sha256, "filename": filename, "kind": kind},
                 files={"sample": (filename, data)},
             )
             resp.raise_for_status()

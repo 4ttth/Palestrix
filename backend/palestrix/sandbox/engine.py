@@ -53,7 +53,9 @@ class Detonator(Protocol):
     name: str
     live: bool  # True only for a detonator backed by a real isolated host
 
-    def analyze(self, filename: str, sha256: str, data: bytes) -> AnalysisResult: ...
+    def analyze(
+        self, filename: str, sha256: str, data: bytes, kind: str = "file"
+    ) -> AnalysisResult: ...
 
 
 class DetonatorUnavailable(RuntimeError):
@@ -69,7 +71,9 @@ class DemoDetonator:
     name = "demo"
     live = False
 
-    def analyze(self, filename: str, sha256: str, data: bytes) -> AnalysisResult:
+    def analyze(
+        self, filename: str, sha256: str, data: bytes, kind: str = "file"
+    ) -> AnalysisResult:
         settings = get_settings()
         static = analysis.static_precheck(
             filename, data, settings.sandbox_entropy_packed_threshold

@@ -110,6 +110,8 @@ export function SandboxView() {
             <SubmitPanel
               disabled={notDeployed}
               maxMb={status.data?.max_sample_mb ?? 100}
+              maxCommandChars={status.data?.max_command_chars ?? 64000}
+              shells={status.data?.shells ?? []}
               onSubmitted={(report) => {
                 setSelected(report.id);
                 void reports.refetch();
@@ -198,34 +200,60 @@ function StatusBanner({ status }: { status: SandboxStatusOut }) {
 function SubmitPanel({
   disabled,
   maxMb,
+  maxCommandChars,
+  shells,
   onSubmitted,
 }: {
   disabled: boolean;
   maxMb: number;
+  maxCommandChars: number;
+  shells: string[];
   onSubmitted: (report: SandboxReportOut) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [command, setCommand] = useState("");
+  const [mode, setMode] = useState<"file" | "command">("file");
   const [submitting, setSubmitting] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
 
+  // A deployment with no command shell configured keeps the old
+  // single-purpose panel rather than offering a tab that 501s.
+  const canCommand = shells.includes("powershell");
+
   async function submit() {
-    if (!file) return;
-    if (file.size > maxMb * 1024 * 1024) {
-      setFailure(`That file is over the ${maxMb} MB limit.`);
-      return;
-    }
-    setSubmitting(true);
     setFailure(null);
     try {
-      const form = new FormData();
-      form.append("file", file);
-      const report = await api.postForm<SandboxReportOut>(
-        "/api/v1/sandbox/samples",
-        form
-      );
-      setFile(null);
-      if (inputRef.current) inputRef.current.value = "";
+      let report: SandboxReportOut;
+      if (mode === "command") {
+        const text = command.trim();
+        if (!text) return;
+        if (text.length > maxCommandChars) {
+          setFailure(`That command is over the ${maxCommandChars} character limit.`);
+          return;
+        }
+        setSubmitting(true);
+        report = await api.post<SandboxReportOut>(
+          "/api/v1/sandbox/commands",
+          { command: text, shell: "powershell" }
+        );
+        setCommand("");
+      } else {
+        if (!file) return;
+        if (file.size > maxMb * 1024 * 1024) {
+          setFailure(`That file is over the ${maxMb} MB limit.`);
+          return;
+        }
+        setSubmitting(true);
+        const form = new FormData();
+        form.append("file", file);
+        report = await api.postForm<SandboxReportOut>(
+          "/api/v1/sandbox/samples",
+          form
+        );
+        setFile(null);
+        if (inputRef.current) inputRef.current.value = "";
+      }
       onSubmitted(report);
     } catch (err) {
       setFailure(err instanceof ApiError ? err.message : "Submission failed.");
@@ -244,6 +272,57 @@ function SubmitPanel({
         </CardDescription>
       </CardHeader>
       <CardContent>
+        {canCommand && (
+          <div className="mb-4 inline-flex rounded-(--radius-input) border border-border bg-surface-2/50 p-0.5">
+            {([
+              ["file", "Upload a file"],
+              ["command", "PowerShell command"],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                disabled={disabled}
+                onClick={() => {
+                  setMode(value);
+                  setFailure(null);
+                }}
+                className={
+                  "rounded-(--radius-input) px-3 py-1.5 text-[13px] font-medium transition-colors " +
+                  (mode === value
+                    ? "bg-surface text-fg shadow-sm"
+                    : "text-muted hover:text-fg")
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {mode === "command" ? (
+          <div className="space-y-2">
+            <textarea
+              value={command}
+              disabled={disabled}
+              onChange={(e) => {
+                setCommand(e.target.value);
+                setFailure(null);
+              }}
+              spellCheck={false}
+              rows={7}
+              placeholder={"powershell -nop -w hidden -enc JABjAGwAaQBlAG4AdAAgAD0A..."}
+              className="w-full resize-y rounded-(--radius-input) border border-border bg-surface-2/50 px-3 py-2 font-mono text-[13px] leading-relaxed text-fg placeholder:text-muted focus:border-accent focus:outline-none disabled:opacity-60"
+            />
+            <p className="text-xs text-muted">
+              Detonated as a script in the isolated guest. Obfuscated input is
+              expected — encoded layers are decoded and reported before it runs.
+              {" "}
+              <span className="font-mono">
+                {command.length.toLocaleString()}/{maxCommandChars.toLocaleString()}
+              </span>
+            </p>
+          </div>
+        ) : (
         <label
           aria-disabled={disabled}
           className={
@@ -258,7 +337,7 @@ function SubmitPanel({
           <span className="text-xs text-muted">
             {file
               ? bytes(file.size)
-              : `Up to ${maxMb} MB. Archives are extracted with the password “infected”.`}
+              : `Up to ${maxMb} MB. zip/7z/tar archives are opened (password “infected”) and the payload inside is detonated.`}
           </span>
           <input
             ref={inputRef}
@@ -271,12 +350,20 @@ function SubmitPanel({
             }}
           />
         </label>
+        )}
 
         <div className="mt-4 flex items-center gap-3">
-          <Button disabled={disabled || !file || submitting} onClick={submit}>
+          <Button
+            disabled={
+              disabled ||
+              submitting ||
+              (mode === "command" ? !command.trim() : !file)
+            }
+            onClick={submit}
+          >
             {submitting ? "Detonating…" : "Submit for analysis"}
           </Button>
-          {file && !submitting && (
+          {mode === "file" && file && !submitting && (
             <button
               type="button"
               className="text-[13px] text-muted underline underline-offset-2"

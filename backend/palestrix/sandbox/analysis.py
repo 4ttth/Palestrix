@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import math
 import random
+import base64
 import re
 from dataclasses import dataclass, field
 
@@ -52,6 +53,7 @@ class Static:
     strings_sample: list[str] = field(default_factory=list)
     iocs: dict = field(default_factory=lambda: {"urls": [], "ips": [], "domains": []})
     notes: list[str] = field(default_factory=list)
+    layers: list[str] = field(default_factory=list)   # peeled encoding layers
 
     def as_dict(self) -> dict:
         return {
@@ -63,6 +65,7 @@ class Static:
             "is_eicar": self.is_eicar,
             "strings_sample": self.strings_sample,
             "notes": self.notes,
+            "layers": self.layers,
         }
 
 
@@ -192,6 +195,54 @@ def _valid_ipv4(s: str) -> bool:
     return len(parts) == 4 and all(p.isdigit() and 0 <= int(p) <= 255 for p in parts)
 
 
+_B64_RUN = re.compile(r"[A-Za-z0-9+/]{24,}={0,2}")
+_SCRIPTISH = (".ps1", ".bat", ".cmd", ".vbs", ".js", ".hta", ".wsf", ".psm1")
+
+
+def peel_encoded_layers(text: str, max_layers: int = 8) -> list[str]:
+    """Decode nested base64 payloads, returning each decoded layer.
+
+    Delivery-stage scripts are routinely a base64 blob wrapping another one,
+    so the interesting strings -- the C2, the download URL -- are never in the
+    text as submitted. Peeling is not execution: this only ever decodes bytes
+    and reads them.
+
+    UTF-16LE is tried first because that is what PowerShell's own
+    -EncodedCommand emits, and decoding that as UTF-8 "succeeds" into noise.
+    """
+    layers: list[str] = []
+    seen = {text}
+    current = text
+
+    for _ in range(max_layers):
+        decoded: list[str] = []
+        for run in _B64_RUN.findall(current):
+            padded = run + "=" * (-len(run) % 4)
+            try:
+                raw = base64.b64decode(padded, validate=True)
+            except Exception:
+                continue
+            if len(raw) < 4:
+                continue
+            for enc in ("utf-16-le", "utf-8"):
+                try:
+                    out = raw.decode(enc)
+                except UnicodeDecodeError:
+                    continue
+                printable = sum(
+                    1 for c in out if c in "\t\r\n" or 32 <= ord(c) < 127
+                )
+                if out and printable / len(out) > 0.85 and out not in seen:
+                    seen.add(out)
+                    decoded.append(out)
+                break
+        if not decoded:
+            break
+        current = "\n".join(decoded)
+        layers.append(current)
+    return layers
+
+
 def static_precheck(filename: str, data: bytes, packed_threshold: float) -> Static:
     file_type, media_type = sniff_magic(data)
     entropy = shannon_entropy(data)
@@ -211,6 +262,19 @@ def static_precheck(filename: str, data: bytes, packed_threshold: float) -> Stat
         )
     if file_type.startswith("PE") and b".vmp" in data[:65536]:
         notes.append("VMProtect section name observed")
+    layers: list[str] = []
+    if media_type.startswith("text/") or filename.lower().endswith(_SCRIPTISH):
+        layers = peel_encoded_layers(data.decode("utf-8", "replace"))
+    if layers:
+        notes.append(
+            f"{len(layers)} encoded layer(s) peeled: the submitted text is a "
+            "wrapper, not the payload"
+        )
+        # IOCs that only exist once decoded are the whole point of peeling.
+        deeper = extract_iocs(extract_strings("\n".join(layers).encode("utf-8", "replace")))
+        for key in ("urls", "ips", "domains"):
+            iocs[key] = sorted(set(iocs[key]) | set(deeper[key]))[:100]
+
     if not notes:
         notes.append("no static red flags in the pre-check")
 
@@ -224,6 +288,7 @@ def static_precheck(filename: str, data: bytes, packed_threshold: float) -> Stat
         strings_sample=strings[:60],
         iocs=iocs,
         notes=notes,
+        layers=layers[:8],
     )
 
 

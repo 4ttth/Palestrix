@@ -126,6 +126,10 @@ class Settings(BaseSettings):
     # detonator then takes over and the demo one steps aside.
     sandbox_enabled: bool = True  # the module answers instead of 501
     sandbox_max_sample_mb: int = 100
+    # Command-line submissions. Obfuscated one-liners get long -- a base64
+    # blob inside a base64 blob is routinely several KB -- so the ceiling is
+    # generous; it exists to bound storage, not to second-guess the input.
+    sandbox_max_command_chars: int = 64_000
     # Advertised on /sandbox/status. The kill itself is enforced by the
     # coordinator (SBX_WALL_CLOCK_SECONDS), which owns the VM -- keep the two
     # in step, and both under sandbox_coordinator_timeout_seconds.

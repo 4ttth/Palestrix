@@ -31,6 +31,7 @@ from ..models import (
 from ..rbac import Principal
 from ..sandbox import submit_run
 from ..sandbox.engine import get_detonator
+from ..sandbox.jobs import COMMAND_MEDIA_TYPE
 from ..storage import get_storage
 from .deps import get_principal, require_capability
 
@@ -61,6 +62,8 @@ def status_(principal: Principal = Depends(get_principal)):
         live=detonator.live,
         max_sample_mb=settings.sandbox_max_sample_mb,
         wall_clock_seconds=settings.sandbox_wall_clock_seconds,
+        max_command_chars=settings.sandbox_max_command_chars,
+        shells=["powershell"],
     )
 
 
@@ -131,6 +134,47 @@ def submit_sample(
         filename=file.filename or "sample.bin",
         data=data,
         media_type=file.content_type or "application/octet-stream",
+    )
+    return _report_out(db, run)
+
+
+@router.post("/commands", response_model=schemas.SandboxReportOut, status_code=201)
+def submit_command(
+    body: schemas.SandboxCommandIn,
+    principal: Principal = Depends(require_capability("sandbox:submit")),
+    db: Session = Depends(get_db),
+):
+    """Detonate a command line instead of a file.
+
+    Same capability as an upload, deliberately: a .ps1 file and the text of
+    that same script are the same primitive, so gating them differently would
+    be security theatre. The command becomes the sample's bytes, which means
+    dedup, at-rest sealing, the timeline and artifact archival all work
+    unchanged, and resubmitting an identical command is still flagged.
+
+    Obfuscated input is the expected case. Nothing here decodes or executes
+    it; the coordinator peels it statically and the guest runs it.
+    """
+    _require_enabled()
+    settings = get_settings()
+    command = body.command.strip()
+    if not command:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "empty command"
+        )
+    if len(command) > settings.sandbox_max_command_chars:
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            f"command exceeds the {settings.sandbox_max_command_chars} character limit",
+        )
+
+    run = submit_run(
+        db,
+        submitter_id=principal.user_id,
+        tenant_id=principal.tenant_id,
+        filename="command.ps1",
+        data=command.encode("utf-8"),
+        media_type=COMMAND_MEDIA_TYPE,
     )
     return _report_out(db, run)
 
