@@ -1,0 +1,15 @@
+[Unit]
+Description=PalestrIX sandbox coordinator (live detonation)
+After=network-online.target
+
+[Service]
+# Needs root: it drives qm (clone/start/destroy) and tcpdump on the tap.
+User=root
+WorkingDirectory=/opt/palestrix-sandbox-coordinator
+EnvironmentFile=/opt/palestrix-sandbox-coordinator/.env
+ExecStart=/opt/palestrix-sandbox-coordinator/.venv/bin/uvicorn \
+    coordinator.main:app --host 127.0.0.1 --port 8900
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

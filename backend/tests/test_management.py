@@ -2,8 +2,10 @@
 accounts, tenant assignment, course rosters, writeup detail/comments, and
 self-service profile settings."""
 
+from sqlalchemy import select
+
 from palestrix.db import SessionLocal
-from palestrix.models import Tenant
+from palestrix.models import Tenant, User
 
 
 # -- users console ---------------------------------------------------------------
@@ -177,6 +179,13 @@ def test_register_respects_default_tenant_setting(client):
     finally:
         get_settings().default_tenant_id = ""
         db = SessionLocal()
+        # Detach the accounts this test registered before dropping the tenant
+        # they point at: users.tenant_id is a foreign key, so PostgreSQL --
+        # and SQLite now that db.py enforces them -- refuses to orphan rows.
+        for user in db.scalars(
+            select(User).where(User.tenant_id == "second-tenant")
+        ):
+            user.tenant_id = None
         db.delete(db.get(Tenant, "second-tenant"))
         db.commit()
         db.close()

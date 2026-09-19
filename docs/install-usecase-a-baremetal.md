@@ -81,19 +81,33 @@ No VLAN-capable switch is needed — tenant VLANs are filtered inside the host's
 
 ## 3. Proxmox VE
 
-1. Install **Proxmox VE 9.1.1** from the ISO on the workstation. Choose ZFS
-   (RAID1/RAIDZ, or single-disk on a modest box) for the system pool at install
-   time.
+1. Install **Proxmox VE 9.1.1** from the ISO on the workstation. Accept the
+   installer's default LVM layout unless the box has spare disks Proxmox can
+   own outright (see the ZFS variant below). Behind a hardware RAID controller
+   the OS sees one logical volume, and LVM is the only workable choice.
 
-2. Create the data pool and register storage (adjust device names). This pool
-   holds VM disks, ISOs, and the MinIO object store:
+2. Confirm the storages the installer created — `local` (directory: ISOs,
+   templates, dumps) and `local-lvm` (LVM-thin: VM and lab disks). There is
+   nothing to create:
 
    ```sh
-   zpool create tank mirror /dev/nvme1n1 /dev/nvme2n1
-   pvesm add zfspool tank-vm  --pool tank/vm  --content images,rootdir
-   mkdir -p /tank/iso
-   pvesm add dir     tank-iso --path /tank/iso --content iso
+   pvesm status
+   pvesm set local     --content iso,vztmpl,backup,import
+   pvesm set local-lvm --content images,rootdir
    ```
+
+   > **ZFS variant.** With spare raw disks, install with ZFS for the system
+   > pool and add a data pool instead:
+   >
+   > ```sh
+   > zpool create tank mirror /dev/nvme1n1 /dev/nvme2n1
+   > pvesm add zfspool tank-vm  --pool tank/vm  --content images,rootdir
+   > mkdir -p /tank/iso
+   > pvesm add dir     tank-iso --path /tank/iso --content iso
+   > ```
+   >
+   > Then read `tank-vm` / `tank-iso` wherever the steps below say
+   > `local-lvm` / `local`.
 
 3. Single node — skip clustering entirely. There is no `pvecm` step; the
    default node name is `pve`.
@@ -156,7 +170,7 @@ No VLAN-capable switch is needed — tenant VLANs are filtered inside the host's
 
 6. Build golden VM templates (Kali, Ubuntu server, Windows eval): upload the
    ISOs — after step 8 you can do this from the PalestrIX admin screen, which
-   forwards to `tank-iso` — install one VM per template, then:
+   forwards to `local` — install one VM per template, then:
 
    ```sh
    qm template <vmid>
@@ -172,7 +186,7 @@ you just installed. A VM is simplest; an LXC is lighter. Either way it lives on
 the management network, never on a tenant VLAN.
 
 1. Create the guest from the Proxmox UI (or `qm`/`pct`): 8 vCPU, 16 GB RAM,
-   100 GB disk on `tank-vm`, Debian 12 or Ubuntu 24.04, `vmbr0` **untagged**
+   100 GB disk on `local-lvm`, Debian 12 or Ubuntu 24.04, `vmbr0` **untagged**
    (management network).
 
 2. Inside the guest, install base packages:
@@ -312,7 +326,7 @@ the management network, never on a tenant VLAN.
    PALESTRIX_PROXMOX_TOKEN_SECRET=<token secret>
    PALESTRIX_PROXMOX_NODE=pve
    PALESTRIX_PROXMOX_BRIDGE=vmbr0
-   PALESTRIX_PROXMOX_ISO_STORAGE=tank-iso
+   PALESTRIX_PROXMOX_ISO_STORAGE=local
 
    # Tenancy (step 11): "local" is the only backend for a single workstation.
    PALESTRIX_CLOUD_BACKEND=local
