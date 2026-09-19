@@ -78,3 +78,33 @@ def test_filename_cannot_escape_or_inject():
     assert ";" not in safe_name("a;rm -rf /.exe")
     assert safe_name("") == "sample.bin"
     assert RUN_BAT.format(name=safe_name("x.exe")).count("\\") >= 2
+
+
+def test_wall_clock_caps_the_detonation_window():
+    """The ceiling counts ISO build and clone time, not just the sleep."""
+    from types import SimpleNamespace
+
+    from coordinator.main import detonation_sleep
+
+    s = SimpleNamespace(
+        boot_grace_seconds=45, detonation_seconds=180, wall_clock_seconds=300
+    )
+    # A fast clone: the analyst's full window fits under the ceiling.
+    assert detonation_sleep(s, elapsed=10.0) == 225.0
+    # A slow clone eats into it rather than extending the run past 300s.
+    assert detonation_sleep(s, elapsed=120.0) == 180.0
+    # Already over budget: hold the VM open for nothing at all.
+    assert detonation_sleep(s, elapsed=400.0) == 0.0
+
+
+def test_wall_clock_below_the_window_wins():
+    """A deployment that sets a tighter ceiling than the requested window
+    gets the ceiling, not the window."""
+    from types import SimpleNamespace
+
+    from coordinator.main import detonation_sleep
+
+    s = SimpleNamespace(
+        boot_grace_seconds=45, detonation_seconds=180, wall_clock_seconds=60
+    )
+    assert detonation_sleep(s, elapsed=0.0) == 60.0

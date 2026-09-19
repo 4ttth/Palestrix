@@ -20,6 +20,21 @@ POST /detonate  (multipart: sample, sha256, filename; Bearer auth)
 The clone is destroyed in a `finally` block. A leaked clone is a live malware
 host, so teardown never depends on the happy path.
 
+## The wall clock
+
+`SBX_WALL_CLOCK_SECONDS` (default 300, matching the 5-minute kill
+[docs/sandbox-security.md](../docs/sandbox-security.md) promises) is a hard
+ceiling on how long a clone may stay alive. It is measured from the top of the
+run, so a slow ISO build or clone eats into the detonation window rather than
+extending the run past the cap — which is what makes it worth anything as the
+anti-cryptomining control the threat model leans on. When the ceiling truncates
+the window the run says so in a `warn` event instead of silently running short.
+
+Keep it under the platform's `PALESTRIX_SANDBOX_COORDINATOR_TIMEOUT_SECONDS`,
+which is itself under the detonation job's RQ timeout. Each layer needs
+headroom over the one below, or the outer one kills a run the inner one was
+about to finish.
+
 ## Why the capture works with no network
 
 The sandbox bridge has no gateway, no SNAT and no DHCP, so nothing a sample

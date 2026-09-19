@@ -71,7 +71,15 @@ def run_job_and_dispatch(name: str, kwargs: dict) -> None:
     dispatch_pending(SessionLocal())
 
 
-def enqueue(name: str, **kwargs) -> None:
+def enqueue(name: str, *, job_timeout: int | None = None, **kwargs) -> None:
+    """Queue ``name`` with ``kwargs``.
+
+    ``job_timeout`` bounds one execution on the redis backend. It matters:
+    RQ's default is 180s (``rq.Queue.DEFAULT_TIMEOUT``), which is shorter than
+    a live malware detonation, so a job that does not set it is killed
+    mid-flight and leaves its row frozen in whatever state it last committed.
+    Callers whose work can outrun three minutes must pass one.
+    """
     settings = get_settings()
     if settings.queue_backend == "redis":
         import redis as redis_lib  # deployment dependency, imported lazily
@@ -79,6 +87,11 @@ def enqueue(name: str, **kwargs) -> None:
 
         Queue(
             "palestrix", connection=redis_lib.from_url(settings.redis_url)
-        ).enqueue("palestrix.orchestration.queue.run_job_and_dispatch", name, kwargs)
+        ).enqueue(
+            "palestrix.orchestration.queue.run_job_and_dispatch",
+            name,
+            kwargs,
+            job_timeout=job_timeout,
+        )
         return
     run_job(name, kwargs)

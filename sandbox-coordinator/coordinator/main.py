@@ -44,6 +44,18 @@ def _authorise(authorization: str | None) -> None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bad coordinator token")
 
 
+def detonation_sleep(settings, elapsed: float) -> float:
+    """Seconds to hold the VM open, given ``elapsed`` already spent this run.
+
+    boot_grace + detonation is what an analyst asked for; wall_clock is what
+    the deployment allows. The smaller wins, and time already burnt on the ISO
+    build and the clone counts against the ceiling -- otherwise a slow clone
+    would quietly extend the window the security doc promises to cap.
+    """
+    window = float(settings.boot_grace_seconds + settings.detonation_seconds)
+    return max(0.0, min(window, settings.wall_clock_seconds - elapsed))
+
+
 @app.get("/healthz")
 def healthz():
     s = get_settings()
@@ -52,6 +64,7 @@ def healthz():
         "template_vmid": s.template_vmid,
         "bridge": s.bridge,
         "detonation_seconds": s.detonation_seconds,
+        "wall_clock_seconds": s.wall_clock_seconds,
     }
 
 
@@ -98,6 +111,10 @@ def detonate(
     capture: Capture | None = None
     ran = False
 
+    # The wall clock starts here, not at vm.start: a slow clone is still time
+    # the run is burning, and the ceiling is a promise about the whole run.
+    t0 = time.time()
+
     try:
         iso_name, iso_path = build_payload_iso(
             data, name, workdir, settings.iso_storage_path, run_id
@@ -131,12 +148,23 @@ def detonate(
             else:
                 sys_event("warn", "network capture could not be started")
 
-        sys_event(
-            "info",
-            f"detonating for {settings.detonation_seconds}s "
-            f"(after {settings.boot_grace_seconds}s boot grace)",
-        )
-        time.sleep(settings.boot_grace_seconds + settings.detonation_seconds)
+        window = settings.boot_grace_seconds + settings.detonation_seconds
+        sleep_for = detonation_sleep(settings, time.time() - t0)
+        if sleep_for < window:
+            sys_event(
+                "warn",
+                f"detonation window cut to {int(sleep_for)}s by the "
+                f"{settings.wall_clock_seconds}s wall clock",
+                window=window,
+                wall_clock=settings.wall_clock_seconds,
+            )
+        else:
+            sys_event(
+                "info",
+                f"detonating for {settings.detonation_seconds}s "
+                f"(after {settings.boot_grace_seconds}s boot grace)",
+            )
+        time.sleep(sleep_for)
 
         if settings.screenshot_enabled:
             vm.screenshot(vmid, shot_path)

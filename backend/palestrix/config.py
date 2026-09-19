@@ -121,6 +121,9 @@ class Settings(BaseSettings):
     # detonator then takes over and the demo one steps aside.
     sandbox_enabled: bool = True  # the module answers instead of 501
     sandbox_max_sample_mb: int = 100
+    # Advertised on /sandbox/status. The kill itself is enforced by the
+    # coordinator (SBX_WALL_CLOCK_SECONDS), which owns the VM -- keep the two
+    # in step, and both under sandbox_coordinator_timeout_seconds.
     sandbox_wall_clock_seconds: int = 300  # hard kill (doc default: 5 min)
     sandbox_coordinator_url: str = ""  # e.g. https://sandbox-01.internal:8443
     sandbox_coordinator_token: str = ""
