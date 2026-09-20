@@ -149,6 +149,28 @@ live C2 will stall and look inert. `docs/sandbox-security.md` calls for
 INetSim/FakeNet on the same bridge; until that exists, treat a quiet verdict as
 "unknown", which is exactly what `verdict.py` returns.
 
+## Baseline suppression
+
+A Windows guest talks constantly without being asked to: mDNS announcing its
+own hostname, LLMNR, NetBIOS, SSDP, DHCP discovery. On an isolated bridge that
+chatter is usually the *only* traffic a capture holds, and scored naively it
+reads as a DNS lookup (+20, T1071.004) to a non-standard port (+20, T1571).
+Every sample then floors at 40 and lands on "suspicious", with the score
+varying only by whether the static packed bit adds its 15 -- a number that
+describes Windows rather than the sample.
+
+`pcapparse` therefore drops packets whose destination is multicast, limited
+broadcast or link-local, plus the usual discovery ports, and refuses names
+under `.local`, `.arpa` or a single label. These are the guest talking to
+nobody in particular; no host on the other end was ever *chosen*. Suppressed
+packets are counted and reported (`suppressed N baseline packet(s)`) so a
+quiet report still distinguishes "nothing happened" from "nothing was
+captured".
+
+The trade-off is deliberate: a sample whose only traffic is multicast is
+indistinguishable from the guest doing the same, so it is suppressed rather
+than guessed at. The baseline count keeps it visible to the analyst.
+
 ## Placement caveat
 
 `docs/sandbox-security.md` wants a dedicated `sandbox-01` host. On a

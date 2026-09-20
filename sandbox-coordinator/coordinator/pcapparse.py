@@ -8,6 +8,7 @@ what the sample *attempted*.
 
 from __future__ import annotations
 
+import ipaddress
 from dataclasses import dataclass, field
 
 
@@ -21,7 +22,52 @@ class NetFacts:
     dns_queries: int = 0
     syn_attempts: int = 0
     http_requests: int = 0
-    packets: int = 0
+    packets: int = 0      # packets that could carry a finding
+    baseline: int = 0     # suppressed guest chatter
+
+
+# Ports the guest shouts into the void on its own initiative. These cover the
+# unicast cases; the multicast ones are already caught by destination.
+BASELINE_PORTS = frozenset({
+    5353,        # mDNS
+    5355,        # LLMNR
+    137, 138,    # NetBIOS name / datagram
+    67, 68,      # DHCP
+    546, 547,    # DHCPv6
+    1900,        # SSDP
+    3702,        # WS-Discovery
+    5350, 5351,  # NAT-PMP
+})
+
+# Suffixes that only appear in link-local name resolution. A sample resolving
+# one of these has not named a C2 -- the guest has named itself.
+BASELINE_SUFFIXES = (".local", ".arpa", ".localdomain")
+
+
+def is_baseline_dst(ip: str) -> bool:
+    """True when the destination is nobody in particular.
+
+    Multicast, limited broadcast and link-local (APIPA) destinations are
+    discovery by construction: no host on the other end was *chosen*.
+    """
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return bool(
+        addr.is_multicast
+        or addr.is_link_local
+        or addr.is_loopback
+        or addr.is_unspecified
+        or (addr.version == 4 and int(addr) == 0xFFFFFFFF)
+    )
+
+
+def is_baseline_name(qname: str) -> bool:
+    lowered = qname.lower().rstrip(".")
+    if not lowered or "." not in lowered:
+        return True          # single label: NetBIOS/LLMNR, never a C2 domain
+    return lowered.endswith(BASELINE_SUFFIXES)
 
 
 HTTP_METHODS = (b"GET ", b"POST ", b"HEAD ", b"PUT ", b"DELETE ", b"OPTIONS ", b"PATCH ")
@@ -96,6 +142,22 @@ def parse(pcap_path: str) -> tuple[NetFacts, list[dict]]:
 
     with reader:
         for pkt in reader:
+            # Suppress the guest's own discovery chatter before anything can
+            # score on it. Without this every capture yields a "DNS lookup"
+            # for the VM's hostname and a "non-standard port" for mDNS --
+            # 40 points that describe Windows, not the sample.
+            dst = pkt[IP].dst if pkt.haslayer(IP) else None
+            dport = None
+            if pkt.haslayer(UDP):
+                dport = int(pkt[UDP].dport)
+            elif pkt.haslayer(TCP):
+                dport = int(pkt[TCP].dport)
+            if (dst is not None and is_baseline_dst(dst)) or (
+                dport is not None and dport in BASELINE_PORTS
+            ):
+                facts.baseline += 1
+                continue
+
             facts.packets += 1
 
             if pkt.haslayer(DNS) and pkt.haslayer(DNSQR) and pkt[DNS].qr == 0:
@@ -103,6 +165,10 @@ def parse(pcap_path: str) -> tuple[NetFacts, list[dict]]:
                     qname = pkt[DNSQR].qname.decode("utf-8", "ignore").rstrip(".")
                 except Exception:
                     qname = ""
+                if qname and is_baseline_name(qname):
+                    facts.baseline += 1
+                    facts.packets -= 1
+                    continue
                 if qname and qname not in seen_dns:
                     seen_dns.add(qname)
                     facts.dns_queries += 1
@@ -179,12 +245,24 @@ def parse(pcap_path: str) -> tuple[NetFacts, list[dict]]:
                             transport="udp",
                         )
 
+    if facts.baseline:
+        events.append(
+            {
+                "category": "network",
+                "level": "info",
+                "msg": f"suppressed {facts.baseline} baseline packet(s): "
+                       "multicast/link-local discovery from the guest itself",
+                "data": {"baseline": facts.baseline},
+            }
+        )
     if facts.packets == 0:
         events.append(
             {
                 "category": "network",
                 "level": "info",
-                "msg": "no network traffic observed during detonation",
+                "msg": "no network traffic attributable to the sample"
+                       if facts.baseline
+                       else "no network traffic observed during detonation",
                 "data": {},
             }
         )
