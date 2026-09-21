@@ -64,7 +64,10 @@ parsed as raw HTML, so author input cannot inject markup.
 
 ## House style
 
-The three shipped SOC Analyst lessons set the tone. Briefly:
+All four paths are written. `soc-analyst/02-reading-auth-logs-at-speed.md` is
+the reference for an ordinary lesson and
+`soc-analyst/14-capstone-48-hour-incident.md` for a lab-gated capstone.
+Briefly:
 
 - Lead with what the thing is *for*, not with definitions.
 - Show real artifacts — log lines, event fields, commands — and read them.
@@ -72,3 +75,18 @@ The three shipped SOC Analyst lessons set the tone. Briefly:
   most of the skill, and a lesson that treats everything as an incident
   teaches an analyst to escalate everything.
 - Close with a handful of questions a reader can answer from the text.
+
+## Capstones and their answer keys
+
+A capstone lesson prints the evidence, then tells the student the exact
+`echo` commands to write their answers with. The rubric in `labs_catalog.py`
+stores the SHA-256 of `answer + newline`, so the lesson's placeholders and the
+rubric's hashes are two halves of one thing.
+
+Two tests hold them together, and both live in `tests/test_labs_catalog.py`:
+
+- `test_capstone_hashes_match_their_documented_answers` keeps the opaque
+  hashes tied to a plaintext answer key that a reviewer can read.
+- `test_every_capstone_answer_appears_in_its_lesson` fails if you edit the
+  evidence so that it no longer implies its own answer -- the failure mode
+  where a student does everything right and scores zero.

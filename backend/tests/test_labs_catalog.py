@@ -40,6 +40,77 @@ def test_expected_hashes_match_the_documented_answers():
         assert item.sha256 == expected, f"{item.key} hash does not match {filename}"
 
 
+# The answer every capstone's evidence supports, written out in plain text so
+# the rubric is reviewable. Without this the hashes are opaque: a lesson could
+# be edited so its evidence no longer implies its own answer key, and nothing
+# would fail until a student did everything right and scored zero.
+CAPSTONE_ANSWERS = {
+    "soc-capstone": {
+        "patient-zero.txt": "ws-0442",
+        "initial-access.txt": "invoice_q1.xlsm",
+        "service-account.txt": "svc_backup",
+        "persistence.txt": "windefendupd",
+        "dwell-hours.txt": "48",
+    },
+    "web-capstone": {
+        "api-version.txt": "v1",
+        "leaked-field.txt": "reset_token",
+        "ssrf-target.txt": "169.254.169.254",
+        "upload-magic.txt": "gif89a",
+        "shell-user.txt": "www-data",
+    },
+    "netdef-capstone": {
+        "pivot-host.txt": "10.24.1.42",
+        "exfil-protocol.txt": "dns",
+        "exfil-domain.txt": "telemetry-sync.net",
+        "beacon-interval.txt": "600",
+        "violated-segment.txt": "management",
+    },
+    "forensics-capstone": {
+        "entry-file.txt": "invoice_q1.xlsm",
+        "dropped-dll.txt": "upd.dll",
+        "persistence-value.txt": "msoupdate",
+        "usb-serial.txt": "aa76b2c10f39",
+        "wipe-tool.txt": "sdelete.exe",
+    },
+}
+
+
+def test_capstone_hashes_match_their_documented_answers():
+    for slug, answers in CAPSTONE_ANSWERS.items():
+        spec = next(s for s in CATALOG if s.slug == slug)
+        assert len(spec.items) == len(answers), f"{slug}: rubric and answer key differ in size"
+        for item in spec.items:
+            filename = item.path.rsplit("/", 1)[-1]
+            assert filename in answers, f"{slug}: no documented answer for {filename}"
+            expected = hashlib.sha256((answers[filename] + "\n").encode()).hexdigest()
+            assert item.sha256 == expected, f"{slug}/{item.key} hash does not match"
+
+
+def test_every_capstone_answer_appears_in_its_lesson():
+    """The evidence a capstone prints must actually contain its own answers.
+    Case and punctuation are allowed to differ -- the lesson shows `WS-0442`
+    and the student writes `ws-0442` -- but the value has to be in there, or
+    the question is unanswerable from the text.
+    """
+    from palestrix.academy_catalog import CATALOG as ACADEMY
+
+    bodies: dict[str, str] = {}
+    for path in ACADEMY:
+        for position, module in enumerate(path.modules):
+            lesson = load_lesson(path.slug, position, module.title)
+            if lesson.lab_slug:
+                bodies[lesson.lab_slug] = lesson.body.lower()
+
+    for slug, answers in CAPSTONE_ANSWERS.items():
+        body = bodies.get(slug)
+        assert body, f"{slug} is not bound to any lesson"
+        for filename, value in answers.items():
+            assert value.lower() in body, (
+                f"{slug}: the lesson never states {value!r} for {filename}"
+            )
+
+
 def test_the_lesson_binds_to_a_lab_this_catalog_ships():
     """A module naming a lab nobody ships is silently ungated, which is the
     failure mode this pairing exists to prevent."""
@@ -83,10 +154,12 @@ def test_applying_is_insert_only_and_idempotent(client):
         assert sum(i.weight_percent for i in items) == 100
         assert items[0].checks["files"][0]["present"] is True
 
-        # A second pass leaves it alone rather than duplicating it.
+        # A second pass leaves it alone rather than duplicating it. Every lab
+        # the catalog ships is skipped, not just this one.
         second = ensure_labs(db)
         db.commit()
-        assert second["created"] == [] and second["skipped"] == ["log-triage"]
+        assert second["created"] == []
+        assert second["skipped"] == [spec.slug for spec in CATALOG]
         assert (
             len(db.scalars(select(LabTemplate).where(LabTemplate.slug == "log-triage")).all())
             == 1

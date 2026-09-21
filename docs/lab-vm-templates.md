@@ -154,6 +154,10 @@ UPDATE lab_templates
  WHERE slug = 'log-triage';
 ```
 
+The four capstone labs (`soc-capstone`, `web-capstone`, `netdef-capstone`,
+`forensics-capstone`) shipped already pointing at `debian12-min`, so they need
+no repointing -- only that the template exists before anyone launches one.
+
 Running instances keep the VM they were cloned from; the next launch gets the
 small one. Check first with:
 

@@ -179,8 +179,9 @@ No VLAN-capable switch is needed — tenant VLANs are filtered inside the host's
    The template name (for example `debian12-min`) is what teachers reference
    when publishing VM labs, and what `labs_catalog.py` ships.
 
-   Build `debian12-min` **first and do not skip it**: the seeded `log-triage`
-   lab clones it, and a lab whose template is missing fails provisioning with
+   Build `debian12-min` **first and do not skip it**: all five shipped labs
+   clone it -- `log-triage` and the four path capstones -- and a lab whose
+   template is missing fails provisioning with
    `no VM template named 'debian12-min' on pve`. Full recipe, including the
    non-negotiable `qemu-guest-agent` (automated checking reads answers through
    it) and the VMID ranges the malware sandbox reserves:
