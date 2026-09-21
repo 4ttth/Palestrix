@@ -22,7 +22,7 @@ this codebase and that paper disagree, the paper wins.
 ## Status
 
 All eight development increments are functionally built and the backend suite
-passes **97 tests**. What remains is the evaluation apparatus the study
+passes **101 tests**. What remains is the evaluation apparatus the study
 requires — a Track A performance harness and the ISO/IEC 25010 questionnaire —
 neither of which exists yet. See [PLAN.md §6](PLAN.md).
 
@@ -51,7 +51,7 @@ pip install -r backend/requirements-dev.txt
 pip install -e plugins/palestrix-provider-demo    # required: entry-point discovery
 
 # 2 — verify
-pytest backend/tests -q                           # → 97 passed
+pytest backend/tests -q                           # → 101 passed
 
 # 3 — the core API
 python -m palestrix.seed                          # demo tenant, users, event
@@ -84,7 +84,7 @@ Sign in with the seed account `rafaela@example.edu` / `palestrix-dev-only!`
 | `/` | Marketing landing |
 | `/login`, `/register` | Passkey-first authentication gateway |
 | `/dashboard` | Active instance, progress, Palestras balance, leaderboard |
-| `/academy` | Paths, module roadmap, certification state |
+| `/academy` | Four shipped paths, module roadmap, certification state |
 | `/courses` | Teacher course manager and lab publishing |
 | `/labs/[id]` | Active ephemeral lab: connection, TTL countdown, live log stream |
 | `/sandbox` | Malware sandbox: submission, verdict, behavior timeline |
@@ -95,6 +95,23 @@ Sign in with the seed account `rafaela@example.edu` / `palestrix-dev-only!`
 Every product surface renders live `/api/v1` responses through the typed client
 in [`lib/api/`](lib/api/). The TTL countdown reads the server's expiry
 timestamp; the provisioning log is a real authenticated SSE stream.
+
+### The academy catalog
+
+The four learning paths the landing page advertises — **SOC Analyst** (14
+modules), **Web Exploitation** (12), **Network Defense** (10), and **Digital
+Forensics** (11) — are content in version control, not demo fixtures. They live
+in [`backend/palestrix/academy_catalog.py`](backend/palestrix/academy_catalog.py)
+and the API applies them at startup, so publishing catalog changes to a running
+deployment is `git pull` and a restart. No seed run, no SQL, no admin form.
+
+Applying is insert-and-reconcile: a missing path is created, an existing one
+keeps its row (and every completion pointing at it) while its title, hours, and
+module order are refreshed from the file, and modules are matched by title so a
+database seeded by an earlier release is adopted rather than duplicated. Nothing
+is ever deleted, and a module a teacher added by hand keeps its place after the
+catalog's. Set `PALESTRIX_ACADEMY_CATALOG_AUTOLOAD=0` to freeze the catalog and
+manage paths through the API alone.
 
 ---
 

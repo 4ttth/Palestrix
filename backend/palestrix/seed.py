@@ -1,8 +1,14 @@
-"""Development seed: demo tenant, users, course, path, event, and templates
+"""Development seed: demo tenant, users, course, event, and templates
 mirroring the frontend's lib/mock.ts so the two halves tell one story.
 
+The academy's four learning paths are *not* demo data — they ship in
+academy_catalog.py and the API publishes them at startup. This seed applies
+the same catalog so a freshly seeded database and a freshly started one hold
+identical content.
+
 Run:  python -m palestrix.seed
-Idempotent: safe to re-run; existing rows are left alone.
+Idempotent: safe to re-run. Demo rows are created once and then left alone;
+the academy catalog is reconciled against the file every time.
 
 DEMO CREDENTIALS, DEVELOPMENT ONLY. Every account's password is
 "palestrix-dev-only!" and must never exist outside a local machine.
@@ -12,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
+from .academy_catalog import ensure_catalog
 from .db import Base, SessionLocal, engine
 from .models import (
     Challenge,
@@ -20,8 +27,6 @@ from .models import (
     Enrollment,
     LabTemplate,
     LedgerEntry,
-    Module,
-    Path,
     Role,
     Streak,
     Tenant,
@@ -108,24 +113,10 @@ def seed() -> None:
             for handle in ("rafalmz", "amihan", "gab_lockpick"):
                 db.add(Enrollment(course_id=course.id, user_id=users[handle].id))
 
-        if db.scalar(select(Path)) is None:
-            path = Path(slug="soc-analyst", title="SOC Analyst", hours=31)
-            db.add(path)
-            db.flush()
-            for i, (title, award) in enumerate(
-                [
-                    ("Reading auth logs at speed", 40),
-                    ("Sigma rules from scratch", 55),
-                    ("Lateral movement patterns", 60),
-                    ("Building a triage runbook", 45),
-                    ("Capstone: 48-hour incident", 120),
-                ]
-            ):
-                db.add(
-                    Module(
-                        path_id=path.id, title=title, position=i, palestras_award=award
-                    )
-                )
+        # The academy catalog is shipped content, not demo data: the four
+        # paths live in academy_catalog.py and are reconciled here the same
+        # way the API reconciles them at startup.
+        ensure_catalog(db)
 
         if db.scalar(select(LabTemplate)) is None:
             db.add(

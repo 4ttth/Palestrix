@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     # (each with plugin.toml + the entry module as a .py file).
     plugin_paths: str = ""
 
+    # Academy. The four paths in academy_catalog.py are applied to the
+    # database at startup so a pull-and-restart publishes catalog changes.
+    # Set false to freeze the catalog and manage paths through the API only.
+    academy_catalog_autoload: bool = True
+
     # Compete
     flag_cooldown_seconds: int = 30
 
