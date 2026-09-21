@@ -94,3 +94,34 @@ and write it down so nobody re-investigates it next week.
 - What does intersecting failed-source addresses with successful-source
   addresses tell you, and why is it a first move rather than a last one?
 - Name two log events that indicate persistence rather than access.
+
+## Lab: work the incident
+
+The four lines at the top of this lesson are the whole incident. Launch the
+**Log Triage** lab and record your answers on the box — the automated checker
+reads them back and grades this module. You need 80% to complete it.
+
+Answer in lower case, one value per file, exactly as the command shows:
+
+```
+mkdir -p /root/answers
+
+# 1. The address the intrusion came from
+echo '198.51.100.7' > /root/answers/source-ip.txt
+
+# 2. The account that successfully logged in
+echo 'someuser' > /root/answers/account.txt
+
+# 3. The authentication method that succeeded
+echo 'password' > /root/answers/method.txt
+
+# 4. The account it escalated to seconds later
+echo 'nobody' > /root/answers/escalated-to.txt
+```
+
+The values above are **placeholders** — replace each with what the log
+actually shows. Use `echo` as written so the file ends with a single newline;
+the checker compares exact contents.
+
+When you are done, hand in from the lab page. The grader reads the four files
+over the guest agent and scores 25% each.
