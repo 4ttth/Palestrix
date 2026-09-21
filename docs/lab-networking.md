@@ -187,9 +187,10 @@ never a bridge. Inter-tenant isolation *is* structural: different VLAN tags
 cannot see each other on a VLAN-aware bridge.
 
 A stronger variant, if you want the guarantee not to rest on the hypervisor's
-rule set: move the tenant gateway off the Proxmox host onto a small dedicated
-router VM with one leg per tenant VLAN and no management interface. Then there
-is no path to forward, rather than a path you have blocked.
+rule set: move the tenant gateways off the Proxmox host onto a small dedicated
+router VM. The host then holds no address in any tenant VLAN, so it is not the
+labs' next hop and no host rule set has to hold. Build steps and the honest
+limits of that claim are in [lab-gateway-vm.md](lab-gateway-vm.md).
 
 Verify from a lab VM's console: it can ping its gateway (`10.24.0.1`) and
 another VM in its own VLAN, but **cannot** reach the Proxmox host's management
