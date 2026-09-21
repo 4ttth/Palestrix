@@ -36,6 +36,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from ..config import get_settings
+from ..tls import client_verify
 from . import LaunchClaims, LaunchValidationError, RosterEntry
 
 logger = logging.getLogger("palestrix.integrations.canvas")
@@ -109,7 +110,8 @@ class CanvasPlatform:
         self._jwks_url = jwks_url or settings.canvas_jwks_url or f"{self.issuer}/api/lti/security/jwks"
         self._token_url = token_url or settings.canvas_token_url or f"{self.issuer}/login/oauth2/token"
         self._client = client or httpx.Client(
-            verify=settings.canvas_verify_tls, timeout=settings.canvas_timeout_seconds
+            verify=client_verify(settings.canvas_verify_tls, settings.canvas_ca_bundle),
+            timeout=settings.canvas_timeout_seconds,
         )
 
         pem = private_key_pem if private_key_pem is not None else settings.canvas_tool_private_key

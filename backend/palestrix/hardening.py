@@ -18,6 +18,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from .config import Settings
+from .tls import TrustConfigError, trust_context
 
 logger = logging.getLogger("palestrix.hardening")
 
@@ -66,6 +67,21 @@ def production_readiness(settings: Settings) -> list[str]:
             "would rotate on every restart and Canvas, which pins the "
             "published JWKS, would reject launches"
         )
+    # A pinned CA that cannot be read fails every outbound call at the first
+    # request instead of at boot, which is exactly what this guard exists to
+    # prevent. Reading the file is local, so the checks still cannot flake.
+    for name, bundle in (
+        ("PROXMOX", settings.proxmox_ca_bundle),
+        ("SANDBOX_COORDINATOR", settings.sandbox_coordinator_ca_bundle),
+        ("CLOUDSTACK", settings.cloudstack_ca_bundle),
+        ("CANVAS", settings.canvas_ca_bundle),
+    ):
+        if not bundle:
+            continue
+        try:
+            trust_context(bundle)
+        except TrustConfigError as exc:
+            findings.append(f"PALESTRIX_{name}_CA_BUNDLE is unusable: {exc}")
     if settings.queue_backend == "inline":
         findings.append(
             "PALESTRIX_QUEUE_BACKEND is inline; production provisions through "

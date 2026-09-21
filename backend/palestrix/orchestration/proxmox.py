@@ -26,6 +26,7 @@ import httpx
 from ..config import get_settings
 from ..models import InstanceState
 from ..providers import add_log
+from ..tls import client_verify
 
 logger = logging.getLogger("palestrix.proxmox")
 
@@ -95,7 +96,9 @@ class ProxmoxProvider:
         self._client = client or httpx.Client(
             base_url=f"{settings.proxmox_host.rstrip('/')}/api2/json",
             headers={"Authorization": f"PVEAPIToken={self._token_id}={secret}"},
-            verify=settings.proxmox_verify_tls,
+            verify=client_verify(
+                settings.proxmox_verify_tls, settings.proxmox_ca_bundle
+            ),
             timeout=settings.proxmox_timeout_seconds,
         )
 

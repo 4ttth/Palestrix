@@ -29,6 +29,7 @@ from __future__ import annotations
 import base64
 
 from ..config import get_settings
+from ..tls import client_verify
 from .engine import AnalysisResult, Artifact, DetonatorUnavailable
 
 
@@ -50,7 +51,10 @@ class CoordinatorDetonator:
         return httpx.Client(
             base_url=settings.sandbox_coordinator_url.rstrip("/"),
             headers={"Authorization": f"Bearer {settings.sandbox_coordinator_token}"},
-            verify=settings.sandbox_coordinator_verify_tls,
+            verify=client_verify(
+                settings.sandbox_coordinator_verify_tls,
+                settings.sandbox_coordinator_ca_bundle,
+            ),
             timeout=settings.sandbox_coordinator_timeout_seconds,
         )
 

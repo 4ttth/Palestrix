@@ -79,6 +79,11 @@ class Settings(BaseSettings):
     proxmox_token_secret: str = ""
     proxmox_node: str = "pve"
     proxmox_verify_tls: bool = True
+    # PEM of the CA that signed the Proxmox API cert, pinned as the only
+    # trust anchor. Set this for a self-signed cluster: Proxmox's own root CA
+    # (/etc/pve/pve-root-ca.pem) carries no keyUsage extension, which the
+    # system trust store path rejects on Python 3.13+ (see tls.py).
+    proxmox_ca_bundle: str = ""
     proxmox_bridge: str = "vmbr0"  # tenant VLAN tags ride on this bridge
     proxmox_timeout_seconds: float = 120.0
     proxmox_iso_storage: str = "local"  # admin ISO uploads forward here
@@ -112,6 +117,7 @@ class Settings(BaseSettings):
     cloudstack_zone_id: str = ""
     cloudstack_network_offering_id: str = ""
     cloudstack_verify_tls: bool = True
+    cloudstack_ca_bundle: str = ""  # PEM to pin; see proxmox_ca_bundle
     cloudstack_timeout_seconds: float = 30.0
 
     # Docker adapter: activated for the "container" kind when enabled. Drives
@@ -142,6 +148,7 @@ class Settings(BaseSettings):
     sandbox_coordinator_url: str = ""  # e.g. https://sandbox-01.internal:8443
     sandbox_coordinator_token: str = ""
     sandbox_coordinator_verify_tls: bool = True
+    sandbox_coordinator_ca_bundle: str = ""  # PEM to pin; see proxmox_ca_bundle
     sandbox_coordinator_timeout_seconds: float = 360.0
     # Static pre-check heuristics: a high-entropy payload reads as packed.
     sandbox_entropy_packed_threshold: float = 7.2
@@ -162,6 +169,7 @@ class Settings(BaseSettings):
     # because Canvas pins the tool JWKS and restarts would rotate it.
     canvas_tool_private_key: str = ""
     canvas_verify_tls: bool = True
+    canvas_ca_bundle: str = ""  # PEM to pin; see proxmox_ca_bundle
     canvas_timeout_seconds: float = 20.0
     # Grade passback queue: exponential backoff (2^attempts minutes) until
     # delivered, then marked failed after this many attempts; failures stay

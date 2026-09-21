@@ -276,7 +276,10 @@ the app cannot see.
       (`PVEAdmin` on the user with `--privsep 0`, or the same role on **both**
       user and token under `--privsep 1`); no
       `root@pam` anywhere in config.
-- [ ] `PALESTRIX_PROXMOX_VERIFY_TLS=true` with a real certificate on the host
+- [ ] `PALESTRIX_PROXMOX_VERIFY_TLS=true` with a real certificate on the host,
+      or Proxmox's cluster CA pinned via `PALESTRIX_PROXMOX_CA_BUNDLE`
+- [ ] `PALESTRIX_PROXMOX_HOST` uses a name the certificate carries (the node
+      hostname, not its management IP)
       (the guard refuses `false` in production). Proxmox ACME or your internal
       CA both work.
 - [ ] `vmbr0` is VLAN-aware and the management interface is **not** on any
