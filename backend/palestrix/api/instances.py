@@ -172,6 +172,29 @@ def _owned_or_admin(
     return instance
 
 
+@router.get("/access", response_model=schemas.RemoteAccessOut)
+def remote_access(principal: Principal = Depends(get_principal)):
+    """How to reach a lab endpoint from outside the tenant VLAN.
+
+    Declared above ``/{instance_id}`` on purpose: FastAPI matches in
+    declaration order, so the other way round "access" is read as an
+    instance id and this route is unreachable.
+
+    Deployment configuration only -- no NetBird API call, no secret. The
+    setup key stays between the student and the overlay's own console, so
+    nothing here is sensitive and every authenticated role may read it.
+    """
+    settings = get_settings()
+    url = settings.netbird_management_url.rstrip("/")
+    return schemas.RemoteAccessOut(
+        configured=bool(url),
+        management_url=url,
+        network_name=settings.netbird_network_name,
+        setup_key_url=settings.netbird_setup_key_url.rstrip("/"),
+        docs_url=settings.netbird_docs_url,
+    )
+
+
 @router.get("/{instance_id}", response_model=schemas.InstanceOut)
 def get_instance(
     instance_id: str,

@@ -546,6 +546,23 @@ class SandboxCommandIn(BaseModel):
     shell: str = Field(default="powershell", pattern=r"^powershell$")
 
 
+class RemoteAccessOut(BaseModel):
+    """How a student is expected to reach a lab endpoint in this deployment.
+
+    Lab instances live on an isolated tenant VLAN, so the address the lab page
+    prints is unreachable from wherever the student is sitting until they join
+    the overlay. This is what the connection help renders; ``configured`` is
+    False when no overlay is set up, and the UI then says so plainly instead
+    of printing instructions that cannot work."""
+
+    kind: str = "netbird"
+    configured: bool
+    management_url: str = ""
+    network_name: str = ""
+    setup_key_url: str = ""
+    docs_url: str = ""
+
+
 class SandboxStatusOut(BaseModel):
     """What the /sandbox surface renders instead of guessing from a 501: is a
     live detonation host wired, or is the demo detonator answering?"""

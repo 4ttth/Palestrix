@@ -153,6 +153,17 @@ class Settings(BaseSettings):
     # Static pre-check heuristics: a high-entropy payload reads as packed.
     sandbox_entropy_packed_threshold: float = 7.2
 
+    # Remote lab access (docs/lab-networking.md Layer 2). Lab VMs sit on an
+    # isolated tenant VLAN with no route off it, so a student reaches one
+    # through an overlay network rather than from the campus LAN. Setting a
+    # management URL turns on the "How do I connect?" help the lab page shows
+    # beside the endpoint; it is documentation only -- the platform never
+    # talks to NetBird, and enrolment is the student's own client.
+    netbird_management_url: str = ""  # e.g. https://netbird.example.edu
+    netbird_network_name: str = ""  # friendly name shown in the UI
+    netbird_setup_key_url: str = ""  # where a student gets their setup key
+    netbird_docs_url: str = "https://docs.netbird.io/how-to/getting-started"
+
     # Canvas LMS integration (Phase 8). Setting the issuer + client id
     # activates the adapter (docs/integrations-canvas-lms.md): LTI 1.3
     # launches, NRPS roster sync, AGS grade passback, and Deep Linking 2.0.

@@ -218,3 +218,40 @@ def test_admin_tenants_isos_and_providers(client, admin, student):
     # All three are infra:manage only.
     for path in ("/api/v1/admin/tenants", "/api/v1/admin/isos", "/api/v1/admin/providers"):
         assert client.get(path, headers=student).status_code == 403
+
+
+# -- remote access help (lab connection modal) ----------------------------------
+
+
+def test_remote_access_route_is_not_shadowed_by_the_instance_id_route(client, student):
+    """/instances/access is declared before /instances/{instance_id}. If that
+    order is ever reversed, FastAPI reads "access" as an instance id and this
+    returns 404 instead of the help payload."""
+    resp = client.get("/api/v1/instances/access", headers=student)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["kind"] == "netbird"
+
+
+def test_remote_access_reports_unconfigured_by_default(client, student):
+    """With no overlay configured the UI must be told so, rather than being
+    handed blank instructions it would render as working steps."""
+    body = client.get("/api/v1/instances/access", headers=student).json()
+    assert body["configured"] is False
+    assert body["management_url"] == ""
+    assert body["docs_url"]  # the upstream how-to is always worth linking
+
+
+def test_remote_access_reflects_configuration(client, student, monkeypatch):
+    from palestrix.config import get_settings
+
+    get_settings.cache_clear()
+    monkeypatch.setenv("PALESTRIX_NETBIRD_MANAGEMENT_URL", "https://nb.example.edu/")
+    monkeypatch.setenv("PALESTRIX_NETBIRD_NETWORK_NAME", "palestrix-labs")
+    try:
+        body = client.get("/api/v1/instances/access", headers=student).json()
+        assert body["configured"] is True
+        # trailing slash trimmed so the UI can join paths without doubling it
+        assert body["management_url"] == "https://nb.example.edu"
+        assert body["network_name"] == "palestrix-labs"
+    finally:
+        get_settings.cache_clear()

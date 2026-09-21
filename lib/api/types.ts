@@ -120,6 +120,21 @@ export type ModuleDetailOut = ModuleOut & {
 
 // -- labs and instances ---------------------------------------------------------
 
+/* GET /instances/access — how a student reaches a lab endpoint in this
+ * deployment. Lab VMs sit on an isolated tenant VLAN, so the address the lab
+ * page prints is unreachable until the client joins the overlay.
+ * `configured: false` means no overlay is set up; render that plainly rather
+ * than printing steps that cannot work. */
+export type RemoteAccessOut = {
+  kind: string;
+  configured: boolean;
+  management_url: string;
+  network_name: string;
+  setup_key_url: string;
+  docs_url: string;
+};
+
+
 export type LabTemplateOut = {
   id: string;
   slug: string;

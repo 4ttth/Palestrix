@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Countdown } from "@/components/lab/Countdown";
 import { GradingCard } from "@/components/lab/GradingCard";
 import { ProvisioningLog } from "@/components/lab/ProvisioningLog";
+import { ConnectHelp } from "@/components/lab/ConnectHelp";
 import { Empty, LoadFailed, Loading } from "@/components/ui/async";
 import { api, ApiError } from "@/lib/api/client";
 import { useApi } from "@/lib/api/hooks";
@@ -167,7 +168,7 @@ export function LabView({ instanceId }: { instanceId: string }) {
                     ? "This instance is gone; its credentials died with it."
                     : gui
                       ? "GUI lab: open the console endpoint below in the noVNC viewer."
-                      : `This lab is headless. Connect over ${inst.proto || "ssh"} from the campus network or the event VPN.`}
+                      : `This lab is headless. It runs on an isolated network — join NetBird, then connect over ${inst.proto || "ssh"}.`}
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -203,6 +204,17 @@ export function LabView({ instanceId }: { instanceId: string }) {
                         : "endpoint appears once provisioning finishes"}
                   </p>
                 )}
+                <div className="mt-3">
+                  <ConnectHelp
+                    endpoint={
+                      running && inst.host
+                        ? gui
+                          ? `${inst.proto}://${inst.host}:${inst.port}`
+                          : `ssh student@${inst.host} -p ${inst.port}`
+                        : null
+                    }
+                  />
+                </div>
                 {running && !gui && (
                   <p className="mt-3 text-[13px] text-muted">
                     Credentials were issued when the instance started and die
