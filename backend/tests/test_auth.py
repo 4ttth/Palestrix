@@ -142,3 +142,63 @@ def test_webauthn_options_and_garbage_rejection(client, student):
         json={"email": "stud1@example.edu"},
     )
     assert resp.status_code == 400
+
+
+def test_client_id_carries_no_secret_material_and_revokes(client, teacher):
+    """The client id is public — it rides in every token request and is
+    stored on plugin records — so it must not be built out of the secret.
+    It was: ``plxc_`` plus the secret's first eight characters, published a
+    slice of the credential. Clients also had no way to be revoked, so a
+    leaked secret was permanent."""
+    created = client.post(
+        "/api/v1/auth/clients",
+        json={"name": "Grading bot", "scopes": ["courses:read"]},
+        headers=teacher,
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    client_id, secret = body["client_id"], body["client_secret"]
+
+    # No prefix of the secret appears in the id, at any length worth having.
+    assert secret[:8] not in client_id
+    for n in range(4, len(secret) + 1):
+        assert secret[:n] not in client_id
+
+    def token():
+        return client.post(
+            "/api/v1/auth/token",
+            json={
+                "grant_type": "client_credentials",
+                "client_id": client_id,
+                "client_secret": secret,
+            },
+        )
+
+    ok = token()
+    assert ok.status_code == 200
+    machine = {"Authorization": f"Bearer {ok.json()['access_token']}"}
+    assert client.get("/api/v1/courses", headers=machine).status_code == 200
+
+    # Revoking stops new tokens...
+    assert (
+        client.delete(f"/api/v1/auth/clients/{client_id}", headers=teacher).status_code
+        == 204
+    )
+    assert token().status_code == 401
+
+    # ...and the token already issued stops working too, rather than
+    # lasting out its TTL.
+    assert client.get("/api/v1/courses", headers=machine).status_code == 401
+
+    # A wrong secret is refused whether or not the client exists.
+    assert (
+        client.post(
+            "/api/v1/auth/token",
+            json={
+                "grant_type": "client_credentials",
+                "client_id": "plxc_doesnotexist",
+                "client_secret": "nope",
+            },
+        ).status_code
+        == 401
+    )

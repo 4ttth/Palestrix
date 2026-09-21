@@ -254,10 +254,24 @@ def _extract_tarlike(data: bytes, out: Extracted) -> None:
         for member in tf:
             if not member.isfile():
                 continue
+            # Refuse from the header where we can: a tar member declares its
+            # size, so a bomb does not have to be decompressed to be caught.
+            if member.size > MAX_ENTRY_BYTES:
+                out.truncated = True
+                continue
             fh = tf.extractfile(member)
             if fh is None:
                 continue
-            if not _accumulate(out, member.name, fh.read(), total):
+            # Bounded read even so. The declared size is attacker-controlled
+            # and gzip/xz members do not have to agree with it, so an
+            # unbounded read() here decompresses whatever the stream feeds
+            # it straight into the coordinator's memory -- before the cap
+            # below ever gets a chance to look at the length.
+            blob = fh.read(MAX_ENTRY_BYTES + 1)
+            if len(blob) > MAX_ENTRY_BYTES:
+                out.truncated = True
+                continue
+            if not _accumulate(out, member.name, blob, total):
                 break
     except Exception as exc:
         out.error = str(exc)

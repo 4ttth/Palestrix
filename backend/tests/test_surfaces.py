@@ -2,6 +2,7 @@
 frontend surfaces render. Additive contract only — shapes existing clients
 rely on are covered by the earlier test modules."""
 
+import os
 from datetime import datetime, timedelta, timezone
 
 from palestrix.db import SessionLocal
@@ -218,3 +219,98 @@ def test_admin_tenants_isos_and_providers(client, admin, student):
     # All three are infra:manage only.
     for path in ("/api/v1/admin/tenants", "/api/v1/admin/isos", "/api/v1/admin/providers"):
         assert client.get(path, headers=student).status_code == 403
+
+
+def test_security_headers_do_not_break_the_canvas_iframe(client, student):
+    """Ordinary responses refuse framing; the LTI wire endpoints cannot.
+
+    An LTI launch renders the picker and the status pages *inside* the
+    Canvas iframe, so a blanket X-Frame-Options: DENY made those pages
+    blank in the LMS. They are exempted and pinned to the configured
+    issuer instead of being opened up.
+    """
+    from palestrix.config import get_settings
+
+    ordinary = client.get("/api/v1/sandbox/status", headers=student)
+    assert ordinary.headers["X-Frame-Options"] == "DENY"
+    assert "frame-ancestors 'none'" in ordinary.headers["Content-Security-Policy"]
+    assert ordinary.headers["X-Content-Type-Options"] == "nosniff"
+    assert ordinary.headers["Referrer-Policy"] == "no-referrer"
+
+    # With no platform configured, the LTI paths stay locked down too:
+    # nothing should be framing them.
+    lti = client.get("/api/v1/integrations/canvas/jwks")
+    assert lti.headers["X-Frame-Options"] == "DENY"
+
+    # Configure an issuer and the same path becomes framable by it alone.
+    import os
+
+    os.environ["PALESTRIX_CANVAS_ISSUER"] = "https://canvas.test"
+    get_settings.cache_clear()
+    try:
+        lti = client.get("/api/v1/integrations/canvas/jwks")
+        assert "X-Frame-Options" not in lti.headers
+        csp = lti.headers["Content-Security-Policy"]
+        assert "frame-ancestors https://canvas.test" in csp
+    finally:
+        os.environ.pop("PALESTRIX_CANVAS_ISSUER", None)
+        get_settings.cache_clear()
+
+
+def test_rate_limits_are_enforced_not_just_documented():
+    """docs/public-api.md publishes a limit table; nothing implemented it.
+
+    A documented control that does not exist is worse than an absent one —
+    the login endpoint was taking unlimited password guesses while the
+    contract said 429s were coming. The app-level limiter is per process
+    and the edge proxy stays authoritative for a deployment, but this is
+    the floor that holds when the API is reached directly.
+
+    Built on its own app so the suite's shared client keeps its fixtures.
+    """
+    from fastapi.testclient import TestClient
+
+    from palestrix import ratelimit
+    from palestrix.config import get_settings
+
+    os.environ["PALESTRIX_RATE_LIMIT_ENABLED"] = "1"
+    os.environ["PALESTRIX_RATE_LIMIT_AUTH_PER_MINUTE"] = "3"
+    get_settings.cache_clear()
+    ratelimit.reset()
+    try:
+        from palestrix.main import create_app
+
+        with TestClient(create_app()) as limited:
+            codes = [
+                limited.post(
+                    "/api/v1/auth/login",
+                    json={"email": "nobody@example.edu", "password": "wrong-guess-1"},
+                ).status_code
+                for _ in range(6)
+            ]
+        # The first three guesses are answered, the rest are throttled.
+        assert codes[:3] == [401, 401, 401], codes
+        assert codes[3:] == [429, 429, 429], codes
+    finally:
+        os.environ.pop("PALESTRIX_RATE_LIMIT_ENABLED", None)
+        os.environ.pop("PALESTRIX_RATE_LIMIT_AUTH_PER_MINUTE", None)
+        get_settings.cache_clear()
+        ratelimit.reset()
+
+
+def test_rate_limit_buckets_match_the_documented_table():
+    """Launch and flag submission are their own buckets: each launch costs a
+    real VM, and flag guessing is paced across challenges, not only within
+    one (compete.py's cooldown does that)."""
+    from palestrix.ratelimit import bucket_for
+
+    api = "/api/v1"
+    assert bucket_for(f"{api}/auth/login", "POST", api) == "auth"
+    assert bucket_for(f"{api}/auth/token", "POST", api) == "auth"
+    assert bucket_for(f"{api}/instances", "POST", api) == "launch"
+    assert bucket_for(f"{api}/instances/lab-abc/extend", "POST", api) == "launch"
+    assert bucket_for(f"{api}/compete/challenges/c1/submit", "POST", api) == "flag"
+    # Reads of the same resources are not launches.
+    assert bucket_for(f"{api}/instances", "GET", api) == "general"
+    assert bucket_for(f"{api}/academy/paths", "GET", api) == "general"
+    assert bucket_for("/healthz", "GET", api) == "general"

@@ -8,6 +8,7 @@ teardown path must not depend on the happy path.
 from __future__ import annotations
 
 import subprocess
+import threading
 import time
 
 from .config import get_settings
@@ -38,13 +39,43 @@ def existing_vmids() -> set[int]:
     return ids
 
 
+# Ids handed out but not yet visible to `qm list`. `qm clone` takes seconds,
+# and two detonations arriving in that window both read the same free id.
+# Whichever loses the clone either fails outright or -- far worse -- the
+# first run's `destroy(vmid)` in its finally block tears down the *other*
+# run's VM, which is a live malware host being pulled out from under an
+# analyst, or left running because its owner already cleaned up.
+_reserved: set[int] = set()
+_alloc_lock = threading.Lock()
+
+
 def allocate_vmid() -> int:
+    """Reserve a free vmid. Release it with ``release_vmid`` when the clone
+    is gone; the reservation and the clone must not be racing."""
     s = get_settings()
-    taken = existing_vmids()
-    for vmid in range(s.clone_vmid_min, s.clone_vmid_max + 1):
-        if vmid not in taken:
-            return vmid
+    with _alloc_lock:
+        taken = existing_vmids() | _reserved
+        for vmid in range(s.clone_vmid_min, s.clone_vmid_max + 1):
+            if vmid not in taken:
+                _reserved.add(vmid)
+                return vmid
     raise VmError("no free vmid in the sandbox clone range")
+
+
+def release_vmid(vmid: int) -> None:
+    """Hand a reserved id back once its clone no longer exists.
+
+    Checked rather than trusted: the caller reaches here from a finally
+    block that may have run after a failed clone, a failed destroy, or a
+    destroy that only half worked. Releasing an id whose VM is still alive
+    would point the next detonation at a running malware host, and never
+    releasing one leaks the range a slot at a time — so the id comes back
+    exactly when Proxmox says the VM is gone.
+    """
+    if vmid in existing_vmids():
+        return
+    with _alloc_lock:
+        _reserved.discard(vmid)
 
 
 def clone_template(vmid: int, name: str) -> None:

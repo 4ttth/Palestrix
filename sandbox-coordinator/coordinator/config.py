@@ -33,6 +33,13 @@ class Settings(BaseSettings):
     wall_clock_seconds: int = 300
     max_sample_bytes: int = 64 * 1024 * 1024
 
+    # How many detonations may hold a VM at once. Each one costs a clone,
+    # a tap, a capture process and a thread for up to wall_clock_seconds,
+    # so this is what stops a burst of submissions from exhausting the
+    # host that exists to contain live malware. Keep it well inside the
+    # clone vmid range and the host's RAM.
+    max_concurrent_detonations: int = 4
+
     work_dir: str = "/var/lib/palestrix-sandbox"
     capture_enabled: bool = True
     screenshot_enabled: bool = True

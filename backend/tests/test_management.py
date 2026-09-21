@@ -336,3 +336,75 @@ def test_profile_name_edit_and_password_change(client):
         ).status_code
         == 200
     )
+
+
+def test_upload_filenames_cannot_escape_their_bucket(client, teacher):
+    """An upload's own filename becomes part of its object key, so it is
+    reduced to one safe segment first. Before, "../../.." walked straight
+    out of the bucket on the local backend — and the only thing in the way
+    was an ``assert``, which ``python -O`` removes."""
+    course = client.post(
+        "/api/v1/courses",
+        json={"code": "SEC 101", "title": "Key Safety"},
+        headers=teacher,
+    ).json()
+    assignment = client.post(
+        f"/api/v1/courses/{course['id']}/assignments",
+        json={"title": "Attachment"},
+        headers=teacher,
+    ).json()
+
+    up = client.post(
+        f"/api/v1/courses/{course['id']}/assignments/{assignment['id']}/attachment",
+        files={"file": ("../../../../escaped.txt", b"payload", "text/plain")},
+        headers=teacher,
+    )
+    assert up.status_code == 200, up.text
+    key = up.json()["storage_key"]
+    assert ".." not in key
+    assert key.startswith(f"lab-archives/{course['id']}/{assignment['id']}/")
+
+    # The bytes landed inside the bucket, under a flattened name.
+    from palestrix.storage import get_storage
+
+    stored = [o.key for o in get_storage().list("lab-archives")]
+    assert any(k.endswith("escaped.txt") and ".." not in k for k in stored)
+
+
+def test_storage_refuses_an_escaping_key_without_asserts(tmp_path):
+    """The escape check has to survive ``python -O``. Asserts do not, so it
+    raises instead — and raises a type the API answers 400 for rather than
+    a 500."""
+    import pytest
+
+    from palestrix.storage import LocalStorage, StorageKeyError, safe_filename
+
+    storage = LocalStorage(str(tmp_path))
+    with pytest.raises(StorageKeyError):
+        storage.exists("lab-archives", "../../etc/passwd")
+    with pytest.raises(StorageKeyError):
+        storage.exists("not-a-bucket", "x")
+
+    # The sanitizer keeps only the final segment rather than raising: it is
+    # what the upload call sites use, and a client's directory parts are
+    # never meaningful to us.
+    assert safe_filename("../../../etc/passwd") == "passwd"
+    assert safe_filename("C:\\Windows\\evil.exe") == "evil.exe"
+    assert safe_filename("") == "upload.bin"
+    assert safe_filename("..") == "upload.bin"
+    assert safe_filename("a/b/c.txt") == "c.txt"
+    assert safe_filename("re;po rt|$(id).pdf") == "re_po_rt___id_.pdf"
+
+
+def test_instance_ids_do_not_collide_across_many_launches():
+    """Instance ids are primary keys and rows are never deleted, so the id
+    space is consumed permanently. Four random digits gave 9000 of them —
+    collisions (a failed INSERT, i.e. a 500 on a launch) well inside one
+    term's labs."""
+    import re
+    import secrets
+
+    # Mirrors the generator in api/instances.py.
+    ids = {f"lab-{secrets.token_hex(5)}" for _ in range(20000)}
+    assert len(ids) == 20000, "id space is too small to launch labs safely"
+    assert all(re.fullmatch(r"lab-[0-9a-f]{10}", i) for i in ids)

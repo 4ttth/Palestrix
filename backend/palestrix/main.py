@@ -172,6 +172,22 @@ def create_app() -> FastAPI:
     app.add_middleware(
         SecurityHeadersMiddleware, production=settings.environment == "production"
     )
+    # The limits docs/public-api.md publishes. Added after the headers
+    # middleware so it runs before it: a throttled request should cost as
+    # little as possible, and still comes back with the security headers.
+    if settings.rate_limit_enabled:
+        from .ratelimit import RateLimitMiddleware
+
+        app.add_middleware(
+            RateLimitMiddleware,
+            api_prefix=API_PREFIX,
+            limits={
+                "general": settings.rate_limit_general_per_minute,
+                "launch": settings.rate_limit_launch_per_minute,
+                "flag": settings.rate_limit_flag_per_minute,
+                "auth": settings.rate_limit_auth_per_minute,
+            },
+        )
 
     api = APIRouter(prefix=API_PREFIX)
     api.include_router(auth.router)
@@ -190,6 +206,17 @@ def create_app() -> FastAPI:
     api.include_router(webhooks.router)
     api.include_router(integrations.router)
     app.include_router(api)
+
+    # A key that would escape its bucket is client input, not a server fault:
+    # answer 400 rather than letting the ValueError surface as a 500.
+    from fastapi import Request
+    from fastapi.responses import JSONResponse
+
+    from .storage import StorageKeyError
+
+    @app.exception_handler(StorageKeyError)
+    async def _storage_key_error(request: Request, exc: StorageKeyError):
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
 
     @app.get("/healthz", tags=["meta"])
     def healthz():

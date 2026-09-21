@@ -268,8 +268,12 @@ def canvas_launch(
     token = create_session_token(user.id, user.role.value, user.tenant_id)
     db.commit()
     settings = get_settings()
+    # The token rides in the fragment, not the query string. A query string
+    # is written to every access log along the way, kept in browser history,
+    # and sent on in a Referer; a fragment never leaves the browser. The
+    # login page reads it from location.hash and clears it.
     return RedirectResponse(
-        f"{settings.origin}/login?lti_token={token}&next=/dashboard",
+        f"{settings.origin}/login#lti_token={token}&next=/dashboard",
         status_code=303,
     )
 
@@ -326,6 +330,17 @@ def canvas_deep_link(
     template = db.get(LabTemplate, template_id)
     if template is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such lab template")
+    # The picker only lists the instructor's own templates, but the form it
+    # posts carries the id, and this handler was taking whatever arrived.
+    # Re-check ownership here: what the UI offers is never the boundary.
+    picker_user = db.get(User, state.get("sub", ""))
+    if picker_user is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "picker session invalid")
+    if (
+        picker_user.role is not Role.superadmin
+        and template.owner_id != picker_user.id
+    ):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "not your lab template")
     from ..integrations.canvas import CanvasPlatform
 
     response_jwt = platform.deep_link_response_jwt(

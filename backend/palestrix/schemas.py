@@ -113,6 +113,14 @@ class OAuthClientCreatedOut(BaseModel):
     scopes: list[str]
 
 
+class OAuthClientOut(ORMModel):
+    client_id: str
+    name: str
+    scopes: list[str]
+    revoked: bool
+    created_at: datetime
+
+
 class ClientTokenIn(BaseModel):
     grant_type: str = "client_credentials"
     client_id: str

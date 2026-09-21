@@ -141,6 +141,55 @@ def test_reaper_expires_and_releases_quota(client, teacher, student, admin):
     _cleanup(client, student)
 
 
+def test_reaper_releases_quota_from_an_instance_stuck_provisioning(
+    client, teacher, student, admin
+):
+    """A dead worker must not pin a tenant's quota forever.
+
+    `requested` and `provisioning` hold quota like any other active state,
+    but the reaper only scanned `running` and `stopped` — so an instance
+    whose provisioning job never came back (a killed worker, a job lost off
+    the queue) kept an instance slot plus its vCPU and RAM reserved with
+    nothing left in the system to release it. That directly contradicted
+    docs/ephemeral-lifecycle.md's "no code path destroys an instance
+    without releasing quota".
+    """
+    from palestrix.db import SessionLocal
+    from palestrix.models import Instance, InstanceState
+
+    template = _publish_container_template(client, teacher)
+    inst = client.post(
+        "/api/v1/instances", json={"template_id": template["id"]}, headers=student
+    ).json()
+
+    # Strand it exactly as a killed worker would: mid-provision, TTL past.
+    db = SessionLocal()
+    try:
+        row = db.get(Instance, inst["id"])
+        row.state = InstanceState.provisioning
+        row.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        db.commit()
+    finally:
+        db.close()
+
+    result = client.post("/api/v1/admin/reaper/run", headers=admin).json()
+    assert inst["id"] in result["reaped"]
+
+    detail = client.get(f"/api/v1/instances/{inst['id']}", headers=student).json()
+    # `failed`, not `expired`: the student's time did not run out,
+    # provisioning broke, and the two must stay distinguishable.
+    assert detail["state"] == "failed"
+    logs = client.get(f"/api/v1/instances/{inst['id']}/logs", headers=student).json()
+    assert any("still provisioning" in line["msg"] for line in logs)
+
+    # The quota it reserved is back: the tenant can launch again.
+    relaunch = client.post(
+        "/api/v1/instances", json={"template_id": template["id"]}, headers=student
+    )
+    assert relaunch.status_code == 201, relaunch.text
+    _cleanup(client, student)
+
+
 def test_provision_failure_retries_once_then_fails(client, teacher, student):
     from palestrix.providers import register_provider
 

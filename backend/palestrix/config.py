@@ -38,6 +38,14 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:3000"
 
+    # Webhook delivery targets. Subscriptions are created by ordinary users,
+    # so by default the platform refuses to POST to anything that is not a
+    # routable internet address (palestrix/netguard.py) — otherwise a
+    # student's subscription is an SSRF primitive against the lab network and
+    # the cloud metadata service. Turn this on only for a site whose
+    # collector really is internal, and expect the boot guard to say so.
+    allow_private_webhooks: bool = False
+
     # Comma-separated directories holding development plugins
     # (each with plugin.toml + the entry module as a .py file).
     plugin_paths: str = ""
@@ -46,6 +54,17 @@ class Settings(BaseSettings):
     # database at startup so a pull-and-restart publishes catalog changes.
     # Set false to freeze the catalog and manage paths through the API only.
     academy_catalog_autoload: bool = True
+
+    # Rate limits, per minute per caller (0 disables a bucket). These are
+    # the numbers docs/public-api.md publishes; the limiter is per process,
+    # so the edge proxy stays the authoritative one for a deployment
+    # (palestrix/ratelimit.py). "auth" covers the credential endpoints --
+    # without it the login form takes unlimited password guesses.
+    rate_limit_enabled: bool = True
+    rate_limit_general_per_minute: int = 600
+    rate_limit_launch_per_minute: int = 60
+    rate_limit_flag_per_minute: int = 10
+    rate_limit_auth_per_minute: int = 20
 
     # Compete
     flag_cooldown_seconds: int = 30

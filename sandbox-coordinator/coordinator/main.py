@@ -14,6 +14,7 @@ import os
 import secrets
 import shutil
 import subprocess
+import threading
 import time
 
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile, status
@@ -27,6 +28,14 @@ from .staticcheck import analyse, static_events
 from .verdict import assess
 
 app = FastAPI(title="PalestrIX sandbox coordinator", docs_url=None, redoc_url=None)
+
+# One detonation holds a VM, a tap, a capture process and a thread for up to
+# the wall clock. Nothing bounded how many ran at once, so a burst of
+# submissions would clone VMs until the vmid range, the host's RAM, or the
+# thread pool gave out -- on the machine whose whole job is containing live
+# malware. Refuse past the ceiling instead, with a Retry-After the core API
+# can act on.
+_slots = threading.Semaphore(get_settings().max_concurrent_detonations)
 
 
 def _authorise(authorization: str | None) -> None:
@@ -79,6 +88,20 @@ def detonate(
     _authorise(authorization)
     settings = get_settings()
 
+    if not _slots.acquire(blocking=False):
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            f"all {settings.max_concurrent_detonations} detonation slots are "
+            "busy; retry when one frees up",
+            headers={"Retry-After": str(settings.wall_clock_seconds)},
+        )
+    try:
+        return _detonate(sample, sha256, filename, kind, settings)
+    finally:
+        _slots.release()
+
+
+def _detonate(sample, sha256: str, filename: str, kind: str, settings):
     data = sample.file.read()
     if not data:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "empty sample")
@@ -224,6 +247,9 @@ def detonate(
                 sys_event("ok", f"throwaway VM {vmid} destroyed")
             except Exception as exc:  # noqa: BLE001
                 sys_event("alert", f"VM {vmid} could NOT be destroyed: {exc}")
+            # Only comes back if the VM really is gone; a surviving clone
+            # keeps its id reserved so nothing clones onto a live host.
+            vm.release_vmid(vmid)
         if iso_path and os.path.exists(iso_path):
             os.remove(iso_path)
 

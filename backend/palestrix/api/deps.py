@@ -67,20 +67,29 @@ def get_principal(
             )
 
         if claims.get("typ") == "client":
+            # Revocation is checked on every request, not only at token
+            # mint: a client token lives for its whole TTL, so a revoked
+            # client would otherwise keep working until it expired.
             client = db.scalar(
-                select(OAuthClient).where(OAuthClient.client_id == claims["sub"])
+                select(OAuthClient).where(
+                    OAuthClient.client_id == claims["sub"],
+                    OAuthClient.revoked.is_(False),
+                )
             )
             if client is None:
-                raise _unauthorized("client no longer exists")
+                raise _unauthorized("client no longer exists or was revoked")
             owner = db.get(User, client.owner_id)
             if owner is None:
                 raise _unauthorized("client owner no longer exists")
+            # Intersected with the client's current scopes: narrowing a
+            # client should take effect immediately, not when its
+            # already-issued tokens happen to expire.
             return Principal(
                 user_id=owner.id,
                 role=owner.role,
                 tenant_id=owner.tenant_id,
                 kind="client",
-                scopes=set(claims.get("scopes", [])),
+                scopes=set(claims.get("scopes", [])) & set(client.scopes or []),
             )
 
     raise _unauthorized()

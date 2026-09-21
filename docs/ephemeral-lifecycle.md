@@ -58,11 +58,23 @@ render as toasts/inline errors, not badges, because they are transient.
    the gamification service and moves `expires_at`, within the template's
    maximum.
 6. **Reap.** The reaper worker scans every 60 s for
-   `expires_at < now() AND state IN ('running','stopped')`:
-   stop, destroy, release quota, emit `instance.expired` (webhook + UI
-   event), write the ledger entries. A slower reconciliation pass compares
-   provider reality against the registry and kills orphans in both
-   directions (records without resources, resources without records).
+   `expires_at < now() AND state IN (<every active state>)` — that is
+   `requested`, `provisioning`, `running`, and `stopped`: stop, destroy,
+   release quota, emit `instance.expired` (webhook + UI event), write the
+   ledger entries. A slower reconciliation pass compares provider reality
+   against the registry and kills orphans in both directions (records
+   without resources, resources without records).
+
+   The pre-`running` states are in that list deliberately. They hold quota
+   like any other active state, so an instance whose provisioning job never
+   came back — a killed worker, a job lost off the queue — would otherwise
+   pin an instance slot plus its vCPU and RAM against the tenant forever,
+   with nothing left in the system to release it. Its TTL is already
+   running; the reaper is what makes the quota honest. One reaped before it
+   ever reached `running` settles as `failed`, not `expired`, and its
+   `instance.expired` event carries `reason: "provision_timeout"` — the
+   student's time did not run out, provisioning broke, and the teacher's
+   view and the study's data should not confuse the two.
 
 ## Multitenancy invariants
 
@@ -79,6 +91,6 @@ render as toasts/inline errors, not badges, because they are transient.
 | Failure | Behavior |
 |---|---|
 | Provision fails | State `failed`, quota released, logs kept 24 h for the teacher, student sees the real error line |
-| Worker dies mid-provision | Job re-queued once with the same instance id (adapters are idempotent by instance id); second failure marks `failed` |
+| Worker dies mid-provision | Job re-queued once with the same instance id (adapters are idempotent by instance id); second failure marks `failed`. If the worker process itself is gone, nothing re-queues and the row sits in `provisioning` — the TTL reaper collects it at expiry and marks it `failed`, which is what releases the quota it reserved |
 | Reaper misses (outage) | Reconciliation pass or the cloud fallback reaper catches it; alarm fires if any instance outlives max TTL |
 | Node dies | Registry marks its instances `expired`; students relaunch, quota already released |

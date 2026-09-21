@@ -5,9 +5,9 @@ from sqlalchemy.orm import Session
 from .. import schemas
 from ..db import SessionLocal, get_db
 from ..events import dispatch_pending, emit
-from ..models import Assignment, Course, Enrollment, Role, Submission, User
+from ..models import Assignment, Course, Enrollment, Role, Submission, Tenant, User
 from ..rbac import Principal
-from ..storage import get_storage
+from ..storage import get_storage, safe_filename
 from .deps import get_principal, require_capability
 
 router = APIRouter(prefix="/courses", tags=["courses"])
@@ -59,7 +59,24 @@ def create_course(
     principal: Principal = Depends(require_capability("courses:write")),
     db: Session = Depends(get_db),
 ):
-    course = Course(**body.model_dump(), teacher_id=principal.user_id)
+    # A teacher's course belongs to their own tenant. Taking tenant_id
+    # straight off the body let a teacher file a course into another class
+    # section (or name a tenant that does not exist, which surfaces as a
+    # foreign-key 500). Superadmins place courses anywhere, deliberately.
+    fields = body.model_dump()
+    requested_tenant = fields.pop("tenant_id", None)
+    if principal.role is Role.superadmin:
+        tenant_id = requested_tenant
+    else:
+        tenant_id = principal.tenant_id
+        if requested_tenant is not None and requested_tenant != tenant_id:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "a course belongs to your own tenant",
+            )
+    if tenant_id is not None and db.get(Tenant, tenant_id) is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "no such tenant")
+    course = Course(**fields, tenant_id=tenant_id, teacher_id=principal.user_id)
     db.add(course)
     db.commit()
     return _course_out(db, course)
@@ -239,7 +256,10 @@ def upload_assignment_file(
     assignment = db.get(Assignment, assignment_id)
     if assignment is None or assignment.course_id != course_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "no such assignment")
-    key = f"{course_id}/{assignment_id}/{file.filename}"
+    # The client's filename becomes part of the object key, so it is reduced
+    # to a single safe segment first — otherwise "../../.." walks out of the
+    # bucket on the local backend and out of the prefix on S3.
+    key = f"{course_id}/{assignment_id}/{safe_filename(file.filename)}"
     storage = get_storage()
     assignment.storage_key = storage.put(
         "lab-archives", key, file.file, file.size or 0

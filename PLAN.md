@@ -42,7 +42,8 @@ validated and Track A cannot start until the harness exists.
 
 | Fact | Value | How to re-verify |
 | --- | --- | --- |
-| Backend test suite | **101 passed, 0 failed** | `pytest backend/tests -q` |
+| Backend test suite | **146 passed, 0 failed** | `pytest backend/tests -q` |
+| Coordinator test suite | **60 passed, 0 failed** | `pytest tests -q` in `sandbox-coordinator/` |
 | Backend size | 77 Python files, ~15,800 lines | `find backend -name '*.py' \| wc -l` |
 | Frontend routes | 16 pages | `find app -name 'page.tsx'` |
 | Role model | 4 roles: student, teacher, admin, **superadmin** | `backend/palestrix/models.py:45` |
@@ -58,7 +59,7 @@ validated and Track A cannot start until the harness exists.
 > ```bash
 > pip install -r backend/requirements-dev.txt
 > pip install -e plugins/palestrix-provider-demo   # ← the undocumented step
-> pytest backend/tests -q                          # → 101 passed
+> pytest backend/tests -q                          # → 146 passed
 > ```
 >
 > This matters beyond convenience: the paper's Table 3 closes every increment
@@ -476,6 +477,133 @@ below carries a dated entry.
 
 Newest first. One entry per session: what changed, what was verified, what is
 now blocked.
+
+### 2026-09-21 — Security and correctness audit; fourteen defects closed
+
+A full pass over the codebase — backend, frontend, coordinator, docs —
+looking for what does not hold rather than what is missing. The wiring is
+sound: all 76 `/api/v1` paths the frontend calls resolve to real routes, the
+TypeScript response types match the OpenAPI schemas with no drift, the
+markdown renderer has no HTML sink, and the LTI 1.3 launch validation
+(RS256 against the platform keyset, audience, issuer, nonce, single-use)
+is correct. What follows is what was wrong.
+
+**Exploitable**
+
+- **SSRF through webhook subscriptions.** `webhooks:manage` is granted to
+  every role, the URL was checked only against `^https?://`, and the
+  dispatcher POSTed to it. Demonstrated live from a seeded *student*
+  account: subscriptions to `169.254.169.254` (cloud metadata) and to the
+  API's own loopback port were both accepted, and delivery status made the
+  result observable. New `palestrix/netguard.py` resolves the host and
+  refuses every non-routable address, on both subscribe *and* every
+  delivery attempt (DNS can be re-pointed between the two), restricts
+  ports, and never follows redirects. `PALESTRIX_ALLOW_PRIVATE_WEBHOOKS`
+  is the documented escape hatch and the boot guard reports it.
+- **Client secret leaked through the client id.** `create_oauth_client`
+  built `client_id = "plxc_" + secret[:8]`. The id is public — it rides in
+  every token request and is stored on plugin records — so eight
+  characters of the credential were published with it. Also: `OAuthClient`
+  had no `revoked` column at all, so a leaked secret could never be taken
+  out of service, and the secret hash was compared with `!=`. All three
+  fixed; revocation now applies to already-issued tokens, and a client
+  token's scopes are intersected with the client's current scopes on every
+  request rather than trusted from the JWT.
+- **Storage escape guarded by `assert`.** `LocalStorage._path` enforced its
+  bucket boundary with an `assert`, which `python -O` removes entirely,
+  and two upload paths fed it raw client filenames. A traversal upload was
+  confirmed to reach the check (500, `AssertionError`). Now a real
+  `StorageKeyError` (answered 400), plus a `safe_filename` sanitizer at
+  every call site.
+- **Plugin scope-escalation approval could be bypassed.** The re-approval
+  check read `set(approve_scopes) < escalated` — a *proper subset* test,
+  so approving any scope that was not a strict subset (an unrelated one,
+  say) satisfied it and the genuinely new scope was granted unapproved.
+  Now every newly requested scope must be named.
+- **Deep-link handler took any template id.** The picker lists only the
+  instructor's own lab templates, but the form it posts carries the id and
+  the handler used it unchecked — so a valid continuation could deep-link
+  somebody else's lab into Canvas. Ownership is now checked in the handler.
+- **An LMS admin could claim a platform admin account.** Claim-by-email
+  matched *any* local account against the address Canvas asserts, including
+  `admin` and `superadmin` — so whoever administers the LMS could set a
+  user's e-mail and have a launch mint a superadmin session. Those accounts
+  are now linked deliberately or not at all.
+- **CTF events ignored tenancy.** Every student saw and could submit to
+  every section's events, challenges, and leaderboards. Listing, the
+  challenge board, the leaderboard, and submission are now scoped;
+  tenant-less events stay site-wide. Course and event creation also took
+  `tenant_id` straight off the request body, letting a teacher file either
+  into another section.
+- **Documented rate limits did not exist.** `docs/public-api.md` has always
+  published a limit table; nothing implemented it, so the login endpoint
+  took unlimited password guesses while the contract promised `429`s.
+  Implemented in `palestrix/ratelimit.py` with an `auth` bucket the docs
+  did not have, and the doc now states honestly that the limiter is
+  per-process and the edge proxy remains authoritative.
+
+**Correctness and availability**
+
+- **Instance ids would have collided.** The primary key was
+  `lab-<4 random digits>` — 9000 values, over an id space that is never
+  freed because instance rows are kept as history. Collisions mean a failed
+  INSERT, i.e. a 500 on a launch, well inside one term's labs. Widened.
+- **Quota leaked permanently on a dead worker.** The reaper only scanned
+  `running` and `stopped`, but `requested` and `provisioning` are active
+  states too. An instance whose provisioning job never came back pinned an
+  instance slot plus vCPU and RAM against its tenant forever, with nothing
+  left to release it — directly contradicting this document's "no code path
+  destroys an instance without releasing quota". The reaper now sweeps
+  every active state; one reaped before `running` settles as `failed` with
+  `reason: "provision_timeout"`, keeping "time ran out" distinct from
+  "provisioning broke" in the teacher's view and the study's data.
+- **One flag capture could pay twice.** The solved-check and the ledger
+  credit were an unguarded read-then-write, so concurrent submissions both
+  read "not solved yet", both awarded, and both could return first blood.
+  New `db.serialize_on` (a PostgreSQL advisory lock, an in-process mutex on
+  SQLite) makes the stretch one critical section; a regression test fires
+  four concurrent submissions and asserts exactly one payout.
+- **Security headers broke the Canvas iframe.** `X-Frame-Options: DENY`
+  went on every response, including the LTI pages that render *inside* the
+  Canvas iframe by design — the deep-link picker and the account-status
+  pages would have been blank in the LMS. Those paths are now exempt and
+  pinned to the configured issuer via `frame-ancestors`; everything else
+  keeps `DENY` and gains a CSP.
+- **LTI session token travelled in the query string.** Logged by every
+  proxy on the way, kept in browser history, carried in a `Referer`. Moved
+  to the URL fragment, which never leaves the browser, and the login page
+  clears it from the address bar. The `?next=` guard also accepted
+  `//evil.example`, a protocol-relative open redirect; fixed.
+- **Sandbox coordinator: two detonations could collide on one VM.**
+  `allocate_vmid` read the free list and cloned without holding anything,
+  so concurrent requests picked the same id — and one run's teardown
+  `destroy(vmid)` would tear down the *other* run's VM: a live malware host
+  pulled out from under an analyst, or left running because its owner had
+  already cleaned up. Ids are now reserved under a lock and handed back
+  only once Proxmox confirms the VM is gone. Concurrent detonations are
+  also bounded (`SBX_MAX_CONCURRENT_DETONATIONS`) — nothing capped them, on
+  the host whose whole job is containing malware.
+- **Tar members were read unbounded.** The per-entry cap was applied to the
+  result of `fh.read()`, so a compressed member expanding to gigabytes was
+  already in the coordinator's memory before anything measured it.
+- Login no longer answers an unknown address faster than a wrong password
+  (an account-enumeration oracle); flag and client-secret comparisons are
+  constant-time; the plugin config key is derived under its own label
+  instead of being plain `sha256(secret)`, which several unrelated
+  subsystems were sharing (old configs still decrypt).
+
+**Verified:** backend **146 passed** (17 new, covering every fix above),
+coordinator **60 passed** (1 new), `tsc --noEmit` clean, `next build`
+clean. The SSRF, traversal, id-collision, and quota-leak fixes were each
+re-confirmed against a live seeded server after the change.
+
+- **Not addressed, deliberately:** the sandbox at-rest seal
+  (`sandbox/vault.py`) is still a keyed XOR with no per-object nonce, so
+  identical samples seal identically and two ciphertexts XOR to the two
+  plaintexts. Its docstring is honest that it exists to stop host AV eating
+  samples rather than to provide confidentiality, and changing the format
+  touches stored data — worth doing, but as its own change.
+- **Next:** unchanged — W1.1 harness, then W1.3 instrument.
 
 ### 2026-09-18 — Academy catalog shipped in version control
 

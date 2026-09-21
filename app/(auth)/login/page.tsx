@@ -20,6 +20,16 @@ import { api, ApiError, writeToken } from "@/lib/api/client";
 import { passkeyLogin } from "@/lib/api/passkeys";
 import type { TokenOut } from "@/lib/api/types";
 
+/* Where a post-login redirect may point. A bare startsWith("/") test also
+ * admits "//evil.example", which browsers read as a protocol-relative URL
+ * and follow off-site — so the second character is checked too, along with
+ * the backslash form some parsers normalise into it. */
+function safeNext(next: string | null): string {
+  if (!next || !next.startsWith("/")) return "/dashboard";
+  if (next.startsWith("//") || next.startsWith("/\\")) return "/dashboard";
+  return next;
+}
+
 /* useSearchParams (the ?next= redirect) requires a Suspense boundary when
  * the page is prerendered. */
 export default function LoginPage() {
@@ -40,16 +50,26 @@ function LoginForm() {
   const [submitting, setSubmitting] = useState<"password" | "passkey" | null>(null);
 
   /* LTI handoff (Phase 8): an LTI launch validated by the backend redirects
-   * here with a ready session token — store it and continue, no ceremony. */
-  const ltiToken = search.get("lti_token");
+   * here with a ready session token. It arrives in the URL fragment, not the
+   * query string — a fragment is never sent to a server, never lands in an
+   * access log, and is not carried in a Referer — so it is read from
+   * location.hash on mount and the hash is wiped immediately afterwards. */
+  const [ltiPending, setLtiPending] = useState(
+    () => typeof window !== "undefined" && window.location.hash.includes("lti_token=")
+  );
   useEffect(() => {
-    if (!ltiToken) return;
-    writeToken(ltiToken);
-    const next = search.get("next");
-    router.replace(next && next.startsWith("/") ? next : "/dashboard");
-  }, [ltiToken, search, router]);
+    if (typeof window === "undefined") return;
+    const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+    const token = hash.get("lti_token");
+    if (!token) return;
+    writeToken(token);
+    // Drop the token from the address bar before navigating anywhere.
+    window.history.replaceState(null, "", window.location.pathname);
+    router.replace(safeNext(hash.get("next")));
+    setLtiPending(false);
+  }, [router]);
 
-  if (ltiToken) {
+  if (ltiPending) {
     return (
       <div role="status" aria-label="Signing you in from your LMS">
         <h1 className="text-2xl font-semibold tracking-tight">One moment</h1>
@@ -63,7 +83,7 @@ function LoginForm() {
   function finish(token: TokenOut) {
     writeToken(token.access_token);
     const next = search.get("next");
-    router.replace(next && next.startsWith("/") ? next : "/dashboard");
+    router.replace(safeNext(next));
   }
 
   function fail(err: unknown, fallback: string) {

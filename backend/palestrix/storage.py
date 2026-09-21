@@ -13,7 +13,7 @@ buckets only (docs/sandbox-security.md §What the sandbox module never gets).
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Protocol
 
 from .config import get_settings
@@ -26,6 +26,29 @@ BUCKETS = (
     "sandbox-reports",
     "backups",
 )
+
+# Object-key alphabet. Keys are built from client-supplied filenames in
+# several places (assignment attachments, lab archives, ISOs), so the
+# sanitizer lives here, next to the backend that would otherwise follow a
+# "../" out of its bucket.
+_SAFE_KEY_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+
+
+class StorageKeyError(ValueError):
+    """A key that would escape its bucket, or a filename that cannot be
+    reduced to one. Callers answer 4xx; this is client input, not a bug."""
+
+
+def safe_filename(filename: str | None, *, fallback: str = "upload.bin") -> str:
+    """One path segment from a client-supplied filename.
+
+    Directory parts are dropped and everything outside the alphabet above
+    becomes an underscore, so the result can never contain a separator or a
+    "..". Used wherever an upload's own name becomes part of an object key.
+    """
+    base = PurePosixPath((filename or "").replace("\\", "/")).name
+    cleaned = "".join(c if c in _SAFE_KEY_CHARS else "_" for c in base).lstrip(".")
+    return cleaned[:128] or fallback
 
 
 @dataclass
@@ -49,9 +72,15 @@ class LocalStorage:
             (self.root / bucket).mkdir(parents=True, exist_ok=True)
 
     def _path(self, bucket: str, key: str) -> Path:
-        assert bucket in BUCKETS, f"unknown bucket {bucket}"
-        path = (self.root / bucket / key).resolve()
-        assert path.is_relative_to(self.root.resolve()), "path escape blocked"
+        # Raised, not asserted: `python -O` strips assert statements, and an
+        # escape check that vanishes under an optimization flag is not a
+        # check. Both conditions are reachable from client input.
+        if bucket not in BUCKETS:
+            raise StorageKeyError(f"unknown bucket {bucket}")
+        root = self.root.resolve()
+        path = (root / bucket / key).resolve()
+        if path != root / bucket and not path.is_relative_to(root / bucket):
+            raise StorageKeyError(f"key escapes bucket {bucket}: {key!r}")
         return path
 
     def put(self, bucket: str, key: str, data: BinaryIO, size: int) -> str:

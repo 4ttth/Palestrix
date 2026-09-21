@@ -19,6 +19,7 @@ import httpx
 import jwt as pyjwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
+from sqlalchemy import select
 
 from test_orchestration import _publish_container_template
 
@@ -283,10 +284,13 @@ def test_resource_launch_maps_identity_and_binds_grade_column(
     )
     assert launch.status_code == 303, launch.text
     location = launch.headers["location"]
-    assert location.startswith("http://localhost:3000/login?lti_token=")
+    # The session token rides in the fragment, never the query string: a
+    # query string is logged by every proxy on the way and kept in history.
+    assert location.startswith("http://localhost:3000/login#lti_token=")
+    assert urlsplit(location).query == ""
 
     # The session token from the handoff authenticates as the mapped student.
-    token = parse_qs(urlsplit(location).query)["lti_token"][0]
+    token = parse_qs(urlsplit(location).fragment)["lti_token"][0]
     me = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert me.status_code == 200 and me.json()["handle"] == "stud1"
 
@@ -525,6 +529,34 @@ def test_deep_linking_picker_round_trip(client, canvas, teacher):
         claims["https://purl.imsglobal.org/spec/lti/claim/message_type"]
         == "LtiDeepLinkingResponse"
     )
+
+    # The picker lists only the instructor's own templates, but the form it
+    # posts carries the id, and this handler took whatever arrived — so a
+    # valid continuation could deep-link somebody else's lab. What the UI
+    # offers is never the boundary; the handler checks ownership itself.
+    from palestrix.db import SessionLocal
+    from palestrix.models import LabTemplate, User
+
+    db = SessionLocal()
+    try:
+        other = db.scalar(select(User).where(User.handle == "stud1"))
+        theirs = LabTemplate(
+            slug="someone-elses:1.0",
+            title="Not The Teacher's Lab",
+            kind="container",
+            owner_id=other.id,
+        )
+        db.add(theirs)
+        db.commit()
+        foreign_id = theirs.id
+    finally:
+        db.close()
+
+    stolen = client.post(
+        "/api/v1/integrations/canvas/deep-link",
+        data={"continuation": continuation, "template_id": foreign_id},
+    )
+    assert stolen.status_code == 403, stolen.text
     assert claims["https://purl.imsglobal.org/spec/lti-dl/claim/data"] == "opaque-dl-data"
     item = claims["https://purl.imsglobal.org/spec/lti-dl/claim/content_items"][0]
     assert item["type"] == "ltiResourceLink"

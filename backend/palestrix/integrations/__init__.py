@@ -203,7 +203,7 @@ def map_launch_identity(
     them); anything else returns None — never silent account creation."""
     from sqlalchemy import func, select
 
-    from ..models import ExternalIdentity, User
+    from ..models import ExternalIdentity, Role, User
 
     identity = db.scalar(
         select(ExternalIdentity).where(
@@ -220,6 +220,22 @@ def map_launch_identity(
         select(User).where(func.lower(User.email) == claims.email.lower())
     )
     if user is None:
+        return None
+    # Claim-by-email crosses a trust boundary: the address is whatever the
+    # platform asserts, and whoever administers the LMS decides what it
+    # says. That is fine for the student and teacher accounts the roster
+    # pre-provisions, and not fine for a platform administrator account —
+    # an LMS admin could otherwise set a user's e-mail to the superadmin's
+    # and have a launch mint a superadmin session. Those accounts are
+    # linked deliberately or not at all.
+    if user.role in (Role.admin, Role.superadmin):
+        logger.warning(
+            "refusing to auto-claim the %s account %s from an %s launch; "
+            "link it deliberately if that is intended",
+            user.role.value,
+            user.handle,
+            platform.id,
+        )
         return None
     db.add(
         ExternalIdentity(

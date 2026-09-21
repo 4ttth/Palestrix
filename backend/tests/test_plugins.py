@@ -2,6 +2,8 @@
 encryption, the echo provider end to end, crash isolation, and the
 contract version gate."""
 
+import pytest
+
 
 def _plugin(client, superadmin, plugin_id):
     rows = client.get("/api/v1/plugins", headers=superadmin).json()
@@ -183,3 +185,74 @@ def test_crash_isolation(client, superadmin, teacher, student2):
     # Other plugins were untouched.
     demo = _plugin(client, superadmin, "provider-demo")
     assert demo["state"] == "enabled"
+
+
+def test_scope_escalation_needs_each_new_scope_approved(client, superadmin):
+    """Re-approval must name every newly requested scope.
+
+    The check used a proper-subset test, so approving a scope that was not a
+    strict subset of the escalation — an unrelated one, say — satisfied it,
+    and the genuinely new scope was granted without anybody having approved
+    it. Driven through the registry because this is the enablement rule
+    rather than an HTTP concern.
+    """
+    import dataclasses
+
+    from sqlalchemy import select
+
+    from palestrix.db import SessionLocal
+    from palestrix.models import PluginRecord, User
+    from palestrix.plugins.registry import PluginError, registry
+
+    loaded = registry.plugins["crashy"]
+    original = loaded.manifest
+    db = SessionLocal()
+    try:
+        # The service principal the registry mints is owned by a real
+        # account, so the grantor has to be one.
+        grantor = db.scalar(select(User.id).where(User.handle == "super1"))
+        # The installed version was approved for one scope only.
+        record = db.get(PluginRecord, "crashy") or PluginRecord(plugin_id="crashy")
+        record.granted_scopes = ["instances:read"]
+        record.enabled = False
+        db.add(record)
+        db.commit()
+
+        # The "new version" additionally wants instances:launch.
+        loaded.manifest = dataclasses.replace(
+            original, scopes=("instances:read", "instances:launch")
+        )
+
+        # Approving an unrelated scope must not carry instances:launch in.
+        with pytest.raises(PluginError) as unrelated:
+            registry.enable(
+                db, "crashy", config={}, granted_by_user_id=grantor,
+                approve_scopes=["courses:read"],
+            )
+        assert "instances:launch" in str(unrelated.value)
+        assert unrelated.value.code == "scopes"
+
+        # Approving nothing is refused for the same reason.
+        with pytest.raises(PluginError):
+            registry.enable(
+                db, "crashy", config={}, granted_by_user_id=grantor,
+                approve_scopes=[],
+            )
+
+        # Naming it is what grants it.
+        registry.enable(
+            db, "crashy", config={}, granted_by_user_id=grantor,
+            approve_scopes=["instances:launch"],
+        )
+        db.expire_all()
+        assert set(db.get(PluginRecord, "crashy").granted_scopes) == {
+            "instances:read",
+            "instances:launch",
+        }
+    finally:
+        loaded.manifest = original
+        try:
+            registry.disable(db, "crashy")
+        except PluginError:
+            pass
+        db.close()

@@ -22,7 +22,7 @@ this codebase and that paper disagree, the paper wins.
 ## Status
 
 All eight development increments are functionally built and the backend suite
-passes **101 tests**. What remains is the evaluation apparatus the study
+passes **146 tests**. What remains is the evaluation apparatus the study
 requires — a Track A performance harness and the ISO/IEC 25010 questionnaire —
 neither of which exists yet. See [PLAN.md §6](PLAN.md).
 
@@ -51,7 +51,7 @@ pip install -r backend/requirements-dev.txt
 pip install -e plugins/palestrix-provider-demo    # required: entry-point discovery
 
 # 2 — verify
-pytest backend/tests -q                           # → 101 passed
+pytest backend/tests -q                           # → 146 passed
 
 # 3 — the core API
 python -m palestrix.seed                          # demo tenant, users, event
@@ -139,9 +139,10 @@ conventional web application:
 
 - **Ephemeral lifecycle + TTL reaper** — instances move
   `requested → provisioning → running → stopped → expired`; the reaper destroys
-  what has lapsed and releases the tenant quota, while a slower reconciliation
-  pass compares provider state against the registry so an orphan can never pin
-  capacity in either direction.
+  what has lapsed and releases the tenant quota — including instances stranded
+  before `running` by a dead worker, which settle as `failed` — while a slower
+  reconciliation pass compares provider state against the registry so an orphan
+  can never pin capacity in either direction.
 - **Quota admission** — instances, vCPU, and memory are checked before a job is
   queued, and a refusal *names the quota that blocked it*.
 - **Palestras ledger** — append-only, single minter and burner, daily cap per

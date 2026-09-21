@@ -196,3 +196,38 @@ def test_events_surface_an_unopened_archive_as_a_warning():
     ev = archive.events(out, None)
     assert ev[0]["level"] == "warn"
     assert "rar" in ev[0]["msg"]
+
+
+def test_tar_member_read_is_bounded():
+    """A tar member is read under a ceiling, not in full and measured after.
+
+    The cap was applied to the result of an unbounded ``read()``, so a
+    compressed member that expands to gigabytes had already been
+    materialised in the coordinator's memory by the time anything checked
+    its length — on the host whose job is containing live malware.
+    """
+    import io
+    import tarfile
+
+    from coordinator.archive import MAX_ENTRY_BYTES, extract
+
+    buf = io.BytesIO()
+    # One highly compressible member well past the per-entry ceiling, plus a
+    # small one that must still come through.
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        big = b"\0" * (MAX_ENTRY_BYTES + 4096)
+        info = tarfile.TarInfo("bomb.bin")
+        info.size = len(big)
+        tf.addfile(info, io.BytesIO(big))
+
+        small = b"MZ payload"
+        info = tarfile.TarInfo("dropper.exe")
+        info.size = len(small)
+        tf.addfile(info, io.BytesIO(small))
+
+    out = extract(buf.getvalue())
+    assert out is not None
+    names = [e.name for e in out.entries]
+    assert "bomb.bin" not in names
+    assert "dropper.exe" in names
+    assert out.truncated

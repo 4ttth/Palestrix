@@ -20,6 +20,10 @@ os.environ["PALESTRIX_PLUGIN_PATHS"] = ",".join(
 # Deterministic tests: the reaper runs only when a test invokes it (directly
 # or via POST /admin/reaper/run), never on the background schedule.
 os.environ["PALESTRIX_REAPER_ENABLED"] = "0"
+# Likewise the rate limiter: every fixture in this suite signs in from the
+# same address, so the auth bucket would throttle the tests rather than any
+# attacker. test_surfaces.py turns it on deliberately and exercises it.
+os.environ["PALESTRIX_RATE_LIMIT_ENABLED"] = "0"
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 

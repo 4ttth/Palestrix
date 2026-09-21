@@ -7,7 +7,7 @@ from ..db import get_db
 from ..models import LabTemplate
 from ..providers import known_kinds
 from ..rbac import Principal
-from ..storage import get_storage
+from ..storage import get_storage, safe_filename
 from .deps import get_principal, require_capability
 
 router = APIRouter(prefix="/labs", tags=["labs"])
@@ -61,7 +61,7 @@ def publish_template(
         storage = get_storage()
         archive_key = storage.put(
             "lab-archives",
-            f"templates/{slug.replace(':', '_')}/{archive.filename}",
+            f"templates/{slug.replace(':', '_')}/{safe_filename(archive.filename, fallback='archive.tar.gz')}",
             archive.file,
             archive.size or 0,
         )

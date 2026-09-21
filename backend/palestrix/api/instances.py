@@ -120,7 +120,13 @@ def launch(
         body.ttl_minutes or template.ttl_minutes_default, template.ttl_minutes_max
     )
     instance = Instance(
-        id=f"lab-{secrets.randbelow(9000) + 1000}",
+        # The id is the primary key and instance rows are never deleted —
+        # destroyed ones stay as history — so the id space is consumed
+        # permanently. A four-digit number gives 9000 of them and starts
+        # colliding (a failed INSERT, i.e. a 500 on a launch) well before a
+        # single term's worth of labs. token_hex keeps the readable "lab-"
+        # prefix without a ceiling worth thinking about.
+        id=f"lab-{secrets.token_hex(5)}",
         template_id=template.id,
         owner_id=principal.user_id,
         tenant_id=tenant.id,

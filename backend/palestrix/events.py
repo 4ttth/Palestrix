@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import WebhookDelivery, WebhookSubscription
+from .netguard import UnsafeWebhookTarget, resolve_public_target
 
 logger = logging.getLogger("palestrix.events")
 
@@ -101,6 +102,18 @@ def dispatch_pending(db: Session, timeout: float = 5.0) -> None:
             continue
         body = json.dumps(delivery.payload, separators=(",", ":")).encode()
         delivery.attempts += 1
+        # Re-check the destination here, not only at subscribe time: the host
+        # is resolved again on every attempt, so a name that pointed
+        # somewhere routable when the subscription was made cannot be
+        # re-pointed at the lab network or the metadata service later.
+        try:
+            resolve_public_target(sub.url)
+        except UnsafeWebhookTarget as exc:
+            logger.warning(
+                "webhook delivery %s refused: %s", delivery.id, exc
+            )
+            delivery.status = "failed"
+            continue
         try:
             resp = httpx.post(
                 sub.url,
@@ -111,6 +124,9 @@ def dispatch_pending(db: Session, timeout: float = 5.0) -> None:
                     "X-Palestrix-Event": delivery.event_type,
                 },
                 timeout=timeout,
+                # A 3xx to an internal address would walk straight past the
+                # check above, so redirects are never followed.
+                follow_redirects=False,
             )
             delivery.status = "delivered" if resp.status_code < 300 else "failed"
         except httpx.HTTPError as exc:

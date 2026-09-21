@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..db import SessionLocal
 from ..events import dispatch_pending, emit
-from ..models import Instance, InstanceState, LabTemplate, as_utc
+from ..models import ACTIVE_STATES, Instance, InstanceState, LabTemplate, as_utc
 from ..providers import active_providers, add_log, provider_for_kind, provider_stop
 
 logger = logging.getLogger("palestrix.reaper")
@@ -33,19 +33,41 @@ logger = logging.getLogger("palestrix.reaper")
 
 def reap_expired(db: Session, *, now: datetime | None = None) -> list[str]:
     """One reap pass. Returns the ids of instances reaped. Provider errors
-    are logged and skipped — the registry is marked expired regardless, so a
-    dead node can never pin quota (the reconcile pass cleans up leftovers)."""
+    are logged and skipped — the registry leaves the active states
+    regardless, so a dead node can never pin quota (the reconcile pass
+    cleans up leftovers)."""
     now = now or datetime.now(timezone.utc)
+    # Every state that holds quota, not only the two that reached a
+    # provider. An instance whose provisioning job died — a killed worker, a
+    # lost Redis job — stays `requested`/`provisioning` forever, and those
+    # are active states, so it pins an instance slot plus its vCPU and RAM
+    # against the tenant with nothing left to release it. Its TTL is already
+    # ticking; letting the reaper see it is what makes the quota honest.
     candidates = db.scalars(
-        select(Instance).where(
-            Instance.state.in_((InstanceState.running, InstanceState.stopped))
-        )
+        select(Instance).where(Instance.state.in_(ACTIVE_STATES))
     ).all()
     reaped: list[str] = []
     for instance in candidates:
         if instance.expires_at is None or as_utc(instance.expires_at) > now:
             continue
-        add_log(db, instance.id, "reaper: TTL hit, stopping and destroying", level="warn")
+        # Read before the provider work below, so the classification cannot
+        # depend on anything an adapter does to the row on its way out.
+        never_ran = instance.state in (
+            InstanceState.requested,
+            InstanceState.provisioning,
+        )
+        if never_ran:
+            add_log(
+                db,
+                instance.id,
+                "reaper: TTL hit while still provisioning; releasing the "
+                "quota this instance reserved",
+                level="warn",
+            )
+        else:
+            add_log(
+                db, instance.id, "reaper: TTL hit, stopping and destroying", level="warn"
+            )
         # Auto-graded labs: time up is a hand-in. Grade while the box still
         # exists; a checker failure never blocks the reap (autograde_if_due
         # swallows it and logs to the instance).
@@ -63,9 +85,21 @@ def reap_expired(db: Session, *, now: datetime | None = None) -> list[str]:
             except Exception as exc:
                 logger.warning("reaper: provider error on %s: %s", instance.id, exc)
                 add_log(db, instance.id, f"reaper: provider error ignored: {exc}", level="warn")
-        instance.state = InstanceState.expired
+        # One that never made it to `running` did not expire, it failed —
+        # keep the distinction so the teacher's view and the study's data
+        # can tell "the student's time ran out" from "provisioning broke".
+        instance.state = (
+            InstanceState.failed if never_ran else InstanceState.expired
+        )
         instance.destroyed_at = now
-        emit(db, "instance.expired", {"instance_id": instance.id, "reason": "ttl"})
+        emit(
+            db,
+            "instance.expired",
+            {
+                "instance_id": instance.id,
+                "reason": "provision_timeout" if never_ran else "ttl",
+            },
+        )
         reaped.append(instance.id)
     db.commit()
     return reaped

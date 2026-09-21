@@ -52,7 +52,21 @@ class PluginError(Exception):
         self.code = code  # not_found | unsupported | config | scopes | hook
 
 
+# Domain separation. The app secret also signs session JWTs and LTI state
+# and keys the sandbox seal, so the plugin-config key is derived under its
+# own label rather than being plain sha256(secret) — which handed several
+# unrelated subsystems the very same 32 bytes.
 def _fernet() -> Fernet:
+    key = hashlib.blake2s(
+        get_settings().secret_key.encode(), person=b"plx-cfg1", digest_size=32
+    ).digest()
+    return Fernet(base64.urlsafe_b64encode(key))
+
+
+def _legacy_fernet() -> Fernet:
+    """The pre-separation key. Read-only: configs encrypted before the
+    derivation changed still decrypt, and re-encrypt under the new key the
+    next time the plugin is enabled."""
     key = hashlib.sha256(get_settings().secret_key.encode()).digest()
     return Fernet(base64.urlsafe_b64encode(key))
 
@@ -68,13 +82,19 @@ def encrypt_config(manifest: Manifest, config: dict) -> dict:
 
 def decrypt_config(config: dict) -> dict:
     out = dict(config)
-    f = _fernet()
+    keys = (_fernet(), _legacy_fernet())
     for key, value in out.items():
-        if isinstance(value, str) and value.startswith(_ENC_PREFIX):
+        if not (isinstance(value, str) and value.startswith(_ENC_PREFIX)):
+            continue
+        token = value[len(_ENC_PREFIX):].encode()
+        for f in keys:
             try:
-                out[key] = f.decrypt(value[len(_ENC_PREFIX):].encode()).decode()
+                out[key] = f.decrypt(token).decode()
+                break
             except InvalidToken:
-                logger.warning("could not decrypt config key %s", key)
+                continue
+        else:
+            logger.warning("could not decrypt config key %s", key)
     return out
 
 
@@ -201,25 +221,35 @@ class PluginRegistry:
         record = db.get(PluginRecord, plugin_id)
 
         # Scope escalation between versions needs explicit re-approval.
+        # Every newly requested scope must be named: a proper-subset test
+        # (`approved < escalated`) passed whenever the two sets merely
+        # differed, so approving one unrelated scope waved through a
+        # different, unapproved one.
         if record is not None:
             escalated = set(manifest.scopes) - set(record.granted_scopes or [])
-            if escalated and set(approve_scopes or []) < escalated:
+            unapproved = escalated - set(approve_scopes or [])
+            if unapproved:
                 raise PluginError(
                     "scopes",
                     "this version requests new scopes that need re-approval: "
-                    f"{sorted(escalated)} (pass them in approve_scopes)",
+                    f"{sorted(unapproved)} (pass them in approve_scopes)",
                 )
 
+        # The service principal's id is deterministic, so look it up by the
+        # id as well as through the record. A record whose link was lost
+        # (an interrupted enable, a restored database) would otherwise try
+        # to INSERT a client_id that already exists and fail the whole
+        # enable on a unique-constraint error.
         client = None
-        if record is not None and record.oauth_client_id:
-            client = db.scalar(
-                select(OAuthClient).where(
-                    OAuthClient.client_id == record.oauth_client_id
-                )
-            )
+        client_id = (record.oauth_client_id if record is not None else None) or (
+            f"plugin-{plugin_id}"
+        )
+        client = db.scalar(
+            select(OAuthClient).where(OAuthClient.client_id == client_id)
+        )
         if client is None:
             client = OAuthClient(
-                client_id=f"plugin-{plugin_id}",
+                client_id=client_id,
                 secret_hash=sha256_hex(pysecrets.token_urlsafe(32)),  # unusable
                 owner_id=granted_by_user_id,
                 name=f"plugin service principal: {manifest.name}",
@@ -230,6 +260,7 @@ class PluginRegistry:
         else:
             client.scopes = list(manifest.scopes)
             client.owner_id = granted_by_user_id
+            client.revoked = False
 
         if record is None:
             record = PluginRecord(plugin_id=plugin_id)

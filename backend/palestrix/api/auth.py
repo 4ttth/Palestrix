@@ -1,6 +1,8 @@
 """Auth: register, password login, WebAuthn ceremonies, API keys, and the
 OAuth2 client-credentials token endpoint."""
 
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,6 +24,11 @@ from ..security import (
 from .deps import get_current_user, get_principal
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Verified against when the account does not exist, so a failed login costs
+# the same Argon2 work either way. Computed once at import; the value is a
+# hash of a random string nobody holds.
+_DUMMY_PASSWORD_HASH = hash_password(secrets.token_urlsafe(32))
 
 
 def _auto_tenant_id(db: Session) -> str | None:
@@ -65,7 +72,14 @@ def register(body: schemas.RegisterIn, db: Session = Depends(get_db)):
 @router.post("/login", response_model=schemas.TokenOut)
 def login(body: schemas.LoginIn, db: Session = Depends(get_db)):
     user = db.scalar(select(User).where(User.email == body.email))
-    if not user or not user.password_hash or not verify_password(body.password, user.password_hash):
+    # An unknown address must not answer faster than a wrong password:
+    # returning early skips the Argon2 verify, and that difference is a
+    # reliable "does this account exist here" oracle. Burn the same work
+    # against a throwaway hash instead.
+    if user is None or not user.password_hash:
+        verify_password(body.password, _DUMMY_PASSWORD_HASH)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid credentials")
+    if not verify_password(body.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid credentials")
     return schemas.TokenOut(
         access_token=create_session_token(user.id, user.role.value, user.tenant_id)
@@ -287,7 +301,11 @@ def create_oauth_client(
         )
     secret, secret_hash = generate_client_secret()
     client = OAuthClient(
-        client_id=f"plxc_{secret[:8]}",
+        # The client id must not be derived from the secret. It is public —
+        # it is sent in every token request, stored on plugin records, and
+        # shown in listings — so building it out of the secret's first bytes
+        # published a slice of the credential itself.
+        client_id=f"plxc_{secrets.token_hex(8)}",
         secret_hash=secret_hash,
         owner_id=principal.user_id,
         name=body.name,
@@ -303,6 +321,32 @@ def create_oauth_client(
     )
 
 
+@router.get("/clients", response_model=list[schemas.OAuthClientOut])
+def list_oauth_clients(
+    principal: Principal = Depends(get_principal), db: Session = Depends(get_db)
+):
+    return db.scalars(
+        select(OAuthClient).where(OAuthClient.owner_id == principal.user_id)
+    ).all()
+
+
+@router.delete("/clients/{client_id}", status_code=204)
+def revoke_oauth_client(
+    client_id: str,
+    principal: Principal = Depends(get_principal),
+    db: Session = Depends(get_db),
+):
+    """Revoke a client. Without this a leaked client secret could never be
+    taken out of service — the credential was permanent once issued."""
+    client = db.scalar(
+        select(OAuthClient).where(OAuthClient.client_id == client_id)
+    )
+    if client is None or client.owner_id != principal.user_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such client")
+    client.revoked = True
+    db.commit()
+
+
 @router.post("/token", response_model=schemas.TokenOut)
 def client_credentials_token(
     body: schemas.ClientTokenIn, db: Session = Depends(get_db)
@@ -310,9 +354,18 @@ def client_credentials_token(
     if body.grant_type != "client_credentials":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "unsupported grant_type")
     client = db.scalar(
-        select(OAuthClient).where(OAuthClient.client_id == body.client_id)
+        select(OAuthClient).where(
+            OAuthClient.client_id == body.client_id,
+            OAuthClient.revoked.is_(False),
+        )
     )
-    if client is None or client.secret_hash != sha256_hex(body.client_secret):
+    # Compared in constant time, and compared even when the client is
+    # unknown, so the endpoint does not answer a bad id measurably faster
+    # than a bad secret.
+    presented = sha256_hex(body.client_secret)
+    expected = client.secret_hash if client is not None else sha256_hex("")
+    matched = secrets.compare_digest(presented, expected)
+    if client is None or not matched:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid client credentials")
     return schemas.TokenOut(
         access_token=create_client_token(

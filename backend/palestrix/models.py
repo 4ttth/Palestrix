@@ -141,6 +141,12 @@ class ApiKey(Base):
 
 
 class OAuthClient(Base):
+    """A machine principal. ``client_id`` is public — it travels in token
+    requests and is stored on plugin records — so it carries no secret
+    material; the secret is only ever seen once, at creation, and lives here
+    as a hash. Revoked clients keep their row (deliveries and plugin records
+    reference it) but can no longer mint or present a token."""
+
     __tablename__ = "oauth_clients"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
@@ -149,6 +155,7 @@ class OAuthClient(Base):
     owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
     name: Mapped[str] = mapped_column(String(128))
     scopes: Mapped[list] = mapped_column(JSON, default=list)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

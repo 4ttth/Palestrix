@@ -274,6 +274,27 @@ The same events flow on an internal bus consumed by UI live updates and by
 plugins (`on_event`, see plugin-development.md); webhooks are the external
 mirror of that bus.
 
+### Where a webhook may point
+
+A subscription is a URL the platform fetches on the subscriber's behalf, and
+any student may create one — so an unrestricted one is a server-side request
+forgery primitive against the lab networks and the cloud metadata service.
+Destinations are therefore restricted to routable internet addresses:
+
+- `http`/`https` only, on port 80, 443, 8080, or 8443.
+- The host is resolved and every address it returns is checked. Loopback,
+  RFC1918, CGNAT, link-local (`169.254.169.254` and its IPv6 twin),
+  multicast, and reserved ranges are refused, as is a host that resolves to
+  a mix of public and private addresses.
+- The check runs again immediately before **every** delivery attempt, not
+  only at subscribe time, so a name cannot be re-pointed inward after the
+  fact (DNS rebinding). Redirects are never followed.
+
+A refused URL fails `POST /webhooks` with `422` and the reason.
+`PALESTRIX_ALLOW_PRIVATE_WEBHOOKS=1` lifts the address rule for a site whose
+collector genuinely is internal; the port rule still applies, and the
+production boot guard reports the setting.
+
 ## Versioning and stability
 
 - Breaking changes require `/api/v2`; `/api/v1` then enters a 12-month
@@ -285,6 +306,32 @@ mirror of that bus.
 
 ## Rate limits
 
-Defaults, per key/session: 600 requests/minute general, 60/minute for
-launch/extend, 10/minute for flag submission (plus the per-challenge
-cooldown). `429` responses carry `Retry-After`.
+Enforced by the API itself (`palestrix/ratelimit.py`), per caller per
+minute. A caller is the API key, else the bearer token, else the peer
+address — so a shared campus NAT does not put a whole class in one bucket
+once they have signed in.
+
+| Bucket | Default | Covers |
+| --- | --- | --- |
+| `auth` | 20/min | `/auth/login`, `/register`, `/token`, `/password`, the passkey login ceremony |
+| `launch` | 60/min | `POST /instances`, `POST /instances/{id}/extend` |
+| `flag` | 10/min | `POST /compete/challenges/{id}/submit` |
+| `general` | 600/min | everything else |
+
+Each is `PALESTRIX_RATE_LIMIT_<BUCKET>_PER_MINUTE`; `0` disables one, and
+`PALESTRIX_RATE_LIMIT_ENABLED=0` disables all of them (the production boot
+guard reports that). A `429` carries `Retry-After` and a structured body:
+
+```json
+{"detail": {"error": "rate_limited", "bucket": "auth", "limit": 20,
+            "window_seconds": 60, "retry_after": 37}}
+```
+
+The `flag` bucket sits on top of the per-challenge cooldown: the cooldown
+paces guessing at one challenge, the bucket paces the account across all of
+them.
+
+The limiter counts **per process**, so a deployment running several uvicorn
+workers allows roughly that many times each number. The edge proxy (Caddy or
+Traefik, see the runbooks) remains the authoritative limiter for a site;
+this is the floor that still holds when the API is reached directly.
