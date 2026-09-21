@@ -194,6 +194,7 @@ Planning and open items for this path: [PLAN.md §W5 and G-11](PLAN.md).
 | [docs/usecase-b-cloud-aws.md](docs/usecase-b-cloud-aws.md) | Cloud runbook |
 | [docs/lab-networking.md](docs/lab-networking.md) | Lab isolation, VLANs, student access |
 | [docs/lab-gateway-vm.md](docs/lab-gateway-vm.md) | Moving tenant gateways off the hypervisor onto a router VM |
+| [docs/netbird-student-access.md](docs/netbird-student-access.md) | Self-hosted NetBird overlay so students can reach isolated labs |
 | [docs/sandbox-security.md](docs/sandbox-security.md) | Sandbox isolation and hardening |
 | [docs/managing-courses-and-users.md](docs/managing-courses-and-users.md) | Classes, modules, enrollment, roles |
 | [docs/automated-checking.md](docs/automated-checking.md) | Rubric autograding → gradebook → Canvas passback |
