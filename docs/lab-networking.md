@@ -67,41 +67,16 @@ Three trust zones, and the whole point is the boundaries between them:
 
 The fix for the APIPA problem and for "students must not see Proxmox" is the
 same: put lab VMs on a **separate bridge from management**, and run DHCP on
-each tenant VLAN. Two ways to do it; pick one.
+each tenant VLAN. Use Option A below. Option B is kept only to record why the
+obvious SDN route does not work here.
 
-### Option A — Proxmox SDN (recommended, PVE 8.1+)
+### Option A — one dnsmasq, manual VLAN interfaces
 
-Proxmox's built-in SDN does VLANs, subnets, an IPAM, and **dnsmasq DHCP** with
-no extra packages. In the Proxmox UI, *Datacenter → SDN*:
-
-1. **Zone** → Add → *VLAN*: ID `lab`, bridge `vmbr1` (create `vmbr1` first as a
-   VLAN-aware Linux bridge with **no** IP and no gateway — it must not bridge
-   to your WAN). This is the isolation boundary.
-2. **VNets** → one per tenant VLAN, tag = the tenant's `vlan_id` from
-   PalestrIX (Admin → Infrastructure → Tenants). e.g. VNet `t100` tag `100`.
-3. **Subnets** on each VNet: the tenant's `/24` (e.g. `10.24.0.0/24`), gateway
-   `10.24.0.1`, **SNAT off**, **DHCP** range `10.24.0.50–10.24.0.250`.
-4. *Datacenter → SDN → Apply*.
-
-Point PalestrIX at the lab bridge in the backend `.env`:
-
-```
-PALESTRIX_PROXMOX_BRIDGE=vmbr1
-```
-
-Now a cloned VM tagged onto VLAN 100 gets a real `10.24.0.x` lease from SDN's
-dnsmasq, and the guest agent reports it — the lab view shows
-`ssh student@10.24.0.x`.
-
-> SDN dnsmasq needs the `dnsmasq` package on the node and the
-> `Datacenter → SDN → Options` DHCP feature enabled. See the Proxmox SDN docs;
-> the built-in IPAM tracks leases so two VMs never collide.
-
-### Option B — one dnsmasq, manual VLAN interfaces (no SDN)
-
-If you'd rather not use SDN, create a VLAN-aware `vmbr1` with no IP, then give
-the host a gateway interface **inside each tenant VLAN** and run one dnsmasq.
-`/etc/network/interfaces` on the node:
+Create a VLAN-aware `vmbr1` with no IP, then give the host a gateway interface
+**inside each tenant VLAN** and run one dnsmasq. This matches how the Proxmox
+adapter attaches a NIC — one shared VLAN-aware bridge
+(`PALESTRIX_PROXMOX_BRIDGE`) plus the tenant's `vlan_id` as the tag — so one
+bridge serves every tenant. `/etc/network/interfaces` on the node:
 
 ```
 auto vmbr1
@@ -128,8 +103,46 @@ dhcp-option=tag:t100,6,1.1.1.1        # DNS (or drop entirely for no egress)
 # add an interface= + dhcp-range= block per tenant VLAN
 ```
 
-`systemctl restart dnsmasq`. Same result: leases on the tenant subnet, no
-APIPA.
+`systemctl restart dnsmasq`. Leases land on the tenant subnet, no APIPA.
+
+> Bind dnsmasq to just these interfaces (`bind-interfaces`, and `port=0` if you
+> do not want it answering DNS). The node may already run SDN's own dnsmasq for
+> a `simple` zone, and two unbound instances will fight over `:53`.
+
+Point PalestrIX at the lab bridge in the backend `.env`, then restart the API
+and worker:
+
+```
+PALESTRIX_PROXMOX_BRIDGE=vmbr1
+```
+
+### Option B — Proxmox SDN DHCP (does **not** work for tenant VLANs)
+
+The obvious route is Proxmox's built-in SDN: VLANs, subnets, an IPAM and
+dnsmasq DHCP with no extra packages. It cannot serve this design, for two
+reasons that compound:
+
+1. **SDN's DHCP is implemented for `simple` zones only.** A `vlan` zone has no
+   `dhcp` property at all, so there is nowhere to enable it:
+   ```
+   # pvesh set /cluster/sdn/zones/lab --bridge vmbr1 --dhcp dnsmasq
+   update sdn zone object failed: unexpected property 'dhcp'
+   ```
+   Confirm on the node — `VlanPlugin` offers `nodes mtu dns reversedns dnszone
+   ipam`, while `SimplePlugin` adds `dhcp`:
+   ```sh
+   sed -n '/sub options/,/^}/p' /usr/share/perl5/PVE/Network/SDN/Zones/VlanPlugin.pm
+   ```
+2. **A `simple` zone cannot carry the tenant VLAN.** Its VNets are standalone
+   bridges with no 802.1Q tag, whereas the adapter attaches every instance as
+   `bridge=<PALESTRIX_PROXMOX_BRIDGE>,tag=<tenant.vlan_id>`. Switching to simple
+   zones would mean one bridge per tenant and an adapter that looks the bridge
+   name up per tenant, instead of one shared bridge plus a tag.
+
+So SDN DHCP is only an option alongside a change to `ProxmoxProvider`: drop the
+global bridge + tag in favour of a per-tenant VNet name. Worth doing if you want
+Proxmox's IPAM to own lease tracking; until then, Option A is the supported
+path.
 
 ### Locking the lab away from MGMT/WAN
 
