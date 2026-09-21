@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from . import academy_content_loader as content
 from .models import Module, Path
 
 
@@ -167,7 +168,13 @@ def ensure_catalog(db: Session, catalog: tuple[CatalogPath, ...] = CATALOG) -> d
     The caller owns the transaction: nothing is committed here.
     """
     _serialise(db)
-    report = {"paths_created": [], "modules_created": [], "modules_renumbered": 0}
+    report = {
+        "paths_created": [],
+        "modules_created": [],
+        "modules_renumbered": 0,
+        "lessons_loaded": 0,
+        "lessons_missing": [],
+    }
 
     for spec in catalog:
         path = db.scalar(select(Path).where(Path.slug == spec.slug))
@@ -200,6 +207,21 @@ def ensure_catalog(db: Session, catalog: tuple[CatalogPath, ...] = CATALOG) -> d
                 )
                 db.add(module)
                 report["modules_created"].append(f"{spec.slug}/{spec_module.title}")
+
+            # The repository is the source of truth for lesson content, so
+            # this reapplies on every startup and a pull publishes an edit.
+            # A module whose file is not written yet keeps whatever it has
+            # rather than being blanked.
+            lesson = content.load(spec.slug, len(ordered), spec_module.title)
+            if lesson.empty:
+                report["lessons_missing"].append(f"{spec.slug}/{spec_module.title}")
+            else:
+                module.summary = lesson.summary
+                module.body = lesson.body
+                module.lab_slug = lesson.lab_slug
+                module.pass_percent = lesson.pass_percent
+                report["lessons_loaded"] += 1
+
             ordered.append(module)
 
         # Whatever a teacher added by hand keeps its relative order, after

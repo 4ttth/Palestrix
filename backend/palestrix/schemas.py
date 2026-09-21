@@ -202,6 +202,29 @@ class ModuleOut(ORMModel):
     position: int
     palestras_award: int
     completed: bool = False  # by the calling principal
+    summary: str = ""
+    has_body: bool = False   # a lesson is written; the list links to it
+    lab_slug: str | None = None
+    pass_percent: int = 80
+    gated: bool = False      # completion requires passing the lab
+
+
+class ModuleLabOut(BaseModel):
+    """The caller's standing against a module's lab."""
+
+    slug: str
+    title: str = ""
+    available: bool = False          # the template exists on this deployment
+    scheme_published: bool = False   # grading is on, so the gate is live
+    pass_percent: int = 80
+    best_percent: int | None = None  # this caller's best run
+    passed: bool = False
+
+
+class ModuleDetailOut(ModuleOut):
+    body: str = ""                   # Markdown; empty until the lesson is written
+    lab: ModuleLabOut | None = None
+    locked_reason: str = ""          # why complete would be refused, if it would
 
 
 # -- labs and instances -------------------------------------------------------------

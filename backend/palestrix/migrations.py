@@ -21,6 +21,9 @@ from .db import Base
 
 logger = logging.getLogger("palestrix.migrations")
 
+# Arbitrary but fixed: "PLXM".
+_LOCK_KEY = 0x504C584D
+
 
 def upgrade(engine: Engine) -> list[str]:
     """Add model columns missing from existing tables. Returns the applied
@@ -29,6 +32,16 @@ def upgrade(engine: Engine) -> list[str]:
     existing_tables = set(inspector.get_table_names())
     applied: list[str] = []
     with engine.begin() as conn:
+        # The API runs several uvicorn workers and each one calls upgrade() in
+        # its own startup lifespan, so they inspect the same schema and then
+        # race to ALTER it. This has never fired only because no deployment
+        # has needed a column since the workers were introduced; the first one
+        # that does would crash three startups out of four. Queue them.
+        if engine.dialect.name == "postgresql":
+            conn.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _LOCK_KEY})
+            # Re-read inside the lock: the winner may have already added them.
+            existing_tables = set(inspect(conn).get_table_names())
+            inspector = inspect(conn)
         for table in Base.metadata.sorted_tables:
             if table.name not in existing_tables:
                 continue  # create_all owns brand-new tables
@@ -48,7 +61,13 @@ def upgrade(engine: Engine) -> list[str]:
                         literal = "'" + literal.replace("'", "''") + "'"
                     if isinstance(literal, (int, float, str)):
                         ddl += f" DEFAULT {literal}"
-                conn.execute(text(ddl))
+                try:
+                    conn.execute(text(ddl))
+                except Exception as exc:  # another writer got there first
+                    if "already exists" not in str(exc).lower():
+                        raise
+                    logger.info("migration already applied elsewhere: %s", ddl)
+                    continue
                 applied.append(ddl)
                 logger.info("migration: %s", ddl)
     return applied

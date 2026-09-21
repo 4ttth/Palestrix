@@ -95,6 +95,27 @@ export type ModuleOut = {
   position: number;
   palestras_award: number;
   completed: boolean;
+  summary: string;
+  has_body: boolean;            // a lesson is written for this module
+  lab_slug: string | null;
+  pass_percent: number;
+  gated: boolean;               // completion requires passing the lab
+};
+
+export type ModuleLabOut = {
+  slug: string;
+  title: string;
+  available: boolean;           // the template exists on this deployment
+  scheme_published: boolean;    // grading is on, so the gate is live
+  pass_percent: number;
+  best_percent: number | null;
+  passed: boolean;
+};
+
+export type ModuleDetailOut = ModuleOut & {
+  body: string;                 // Markdown
+  lab: ModuleLabOut | null;
+  locked_reason: string;
 };
 
 // -- labs and instances ---------------------------------------------------------

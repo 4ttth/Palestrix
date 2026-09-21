@@ -223,6 +223,15 @@ class Path(Base):
 
 
 class Module(Base):
+    """One lesson in a path.
+
+    ``body`` is Markdown shipped in the repository (academy_content/) rather
+    than authored through the API, so lessons version with the code that
+    grades them. ``lab_slug`` binds the module to a lab template: when that
+    lab has a published grading scheme, completion is earned by passing it
+    rather than claimed by pressing a button.
+    """
+
     __tablename__ = "modules"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
@@ -230,6 +239,13 @@ class Module(Base):
     title: Mapped[str] = mapped_column(String(256))
     position: Mapped[int] = mapped_column(Integer, default=0)
     palestras_award: Mapped[int] = mapped_column(Integer, default=40)
+    summary: Mapped[str] = mapped_column(String(512), default="")
+    body: Mapped[str] = mapped_column(Text, default="")  # Markdown
+    # Bound by slug, not id: lab templates are per-deployment rows, so the
+    # repository catalog cannot know their ids, and a module may name a lab
+    # that has not been imported here yet.
+    lab_slug: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    pass_percent: Mapped[int] = mapped_column(Integer, default=80)
 
 
 class ModuleCompletion(Base):
