@@ -37,8 +37,11 @@ render as toasts/inline errors, not badges, because they are transient.
    with tenant, template, TTL, and access mode.
 3. **Provision.** A worker claims the job and calls the provider adapter:
    - **Proxmox VM:** clone from template (`POST /nodes/{node}/qemu/{vmid}/clone`),
-     attach ISO if the template requires one, set the tenant VLAN/bridge,
-     start, wait for the QEMU guest agent heartbeat.
+     attach ISO if the template requires one, set the tenant VLAN/bridge **and
+     the template's declared `cores`/`memory`** (so the clone is the size the
+     lab publishes, not the size the golden image happened to be —
+     [lab-vm-templates.md](lab-vm-templates.md)), start, wait for the QEMU
+     guest agent heartbeat.
    - **Docker container:** ensure the image is built from the teacher's
      archive, create the container on the tenant network with resource
      limits, start, wait for the healthcheck.

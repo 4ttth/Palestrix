@@ -140,10 +140,14 @@ enough.
    The core API consumes `PROXMOX_HOST`, `PROXMOX_TOKEN_ID`,
    `PROXMOX_TOKEN_SECRET`, and `PROXMOX_NODE` (the single node's name, `pve`
    by default) from its environment.
-5. Build golden VM templates (Kali, Ubuntu server, Windows eval) from ISOs
-   uploaded through the PalestrIX admin screen (which calls
-   `POST /nodes/{node}/storage/{storage}/upload` on the Proxmox API). Convert
-   each to a template: `qm template <vmid>`.
+5. Build golden VM templates from ISOs uploaded through the PalestrIX admin
+   screen (which calls `POST /nodes/{node}/storage/{storage}/upload` on the
+   Proxmox API). Convert each to a template: `qm template <vmid>`. Build the
+   **minimal Debian** one first — it is what the shipped labs clone, and on a
+   single workstation it is the difference between a class launching together
+   and a class queueing. Kali is for labs that genuinely run offensive tooling.
+   Recipes and the VMID ranges to stay out of:
+   [lab-vm-templates.md](lab-vm-templates.md).
 6. GUI labs use Proxmox's noVNC: the orchestration service requests a VNC
    ticket (`POST /nodes/{node}/qemu/{vmid}/vncproxy`) and the frontend embeds
    the console; Caddy passes the websocket through under the main domain.

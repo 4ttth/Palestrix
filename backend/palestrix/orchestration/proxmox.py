@@ -256,7 +256,26 @@ class ProxmoxProvider:
             )
         else:
             add_log(db, instance.id, f"network: attached to bridge {self._bridge}")
-        self._post(f"/nodes/{self._node}/qemu/{vmid}/config", net0=net0)
+
+        # Size the clone to what the template declares. A clone otherwise
+        # inherits the golden image's cores and memory, so a lab published as
+        # 1 vCPU / 1 GB could boot as whatever the admin happened to build --
+        # and tenant quota (api/instances.py) would still charge the declared
+        # figure. Setting them here makes the declaration binding instead of
+        # advisory, which is the whole point of declaring it.
+        config = {"net0": net0}
+        if template.cpu:
+            config["cores"] = template.cpu
+        if template.ram_gb:
+            config["memory"] = template.ram_gb * 1024  # Proxmox wants MiB
+        self._post(f"/nodes/{self._node}/qemu/{vmid}/config", **config)
+        if "cores" in config or "memory" in config:
+            add_log(
+                db,
+                instance.id,
+                f"vm: sized to {template.cpu or 'template'} vCPU, "
+                f"{template.ram_gb or 'template'} GB RAM",
+            )
 
         upid = self._post(f"/nodes/{self._node}/qemu/{vmid}/status/start")
         self._wait_task(upid)

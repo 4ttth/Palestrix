@@ -376,6 +376,8 @@ def test_proxmox_adapter_lifecycle(client):
             kind="vm",
             access_mode="no-gui",
             vm_template="kali-web",
+            cpu=1,
+            ram_gb=1,
             owner_id="tester",
         )
         instance = Instance(
@@ -391,6 +393,10 @@ def test_proxmox_adapter_lifecycle(client):
         assert instance.port == 22 and instance.proto == "ssh"
         assert instance.node == "pve"
         assert state["config"]["net0"].startswith("virtio,bridge=")
+        # The declared footprint is pushed onto the clone rather than left at
+        # whatever the golden image was built with. Proxmox takes MiB.
+        assert state["config"]["cores"] == "1"
+        assert state["config"]["memory"] == "1024"
         # clone happened from the named template's vmid.
         assert ("POST", "/api2/json/nodes/pve/qemu/100/clone") in state["requests"]
 

@@ -101,8 +101,12 @@ curl -s http://localhost:8000/api/v1/courses/$COURSE/assignments \
 ```
 
 `quiz` and `writeup` assignment kinds are accepted by the API but have no
-upload-panel mode yet. `cpu`/`ram_gb` on the template are what tenant
-quota enforcement charges at launch (Phase 7), so declare them honestly.
+upload-panel mode yet. `cpu`/`ram_gb` on the template are what tenant quota
+enforcement charges at launch (Phase 7) **and, for `vm` labs, what the clone
+is actually built with** — the Proxmox adapter sets `cores`/`memory` on the
+new VM rather than letting it inherit the golden image's. So declare the size
+you mean: ask for what the lab's work needs, not what the template happens to
+be. See [lab-vm-templates.md](lab-vm-templates.md).
 
 ## Getting students into a class
 

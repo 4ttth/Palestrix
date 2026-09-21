@@ -168,16 +168,24 @@ No VLAN-capable switch is needed — tenant VLANs are filtered inside the host's
    keys (a misspelled key is silently ignored and the adapter logs
    `PALESTRIX_PROXMOX_TOKEN_SECRET is empty` at startup).
 
-6. Build golden VM templates (Kali, Ubuntu server, Windows eval): upload the
-   ISOs — after step 8 you can do this from the PalestrIX admin screen, which
-   forwards to `local` — install one VM per template, then:
+6. Build golden VM templates: upload the ISOs — after step 8 you can do this
+   from the PalestrIX admin screen, which forwards to `local` — install one VM
+   per template, then:
 
    ```sh
    qm template <vmid>
    ```
 
-   The template name (for example `kali-web`) is what teachers reference when
-   publishing VM labs.
+   The template name (for example `debian12-min`) is what teachers reference
+   when publishing VM labs, and what `labs_catalog.py` ships.
+
+   Build `debian12-min` **first and do not skip it**: the seeded `log-triage`
+   lab clones it, and a lab whose template is missing fails provisioning with
+   `no VM template named 'debian12-min' on pve`. Full recipe, including the
+   non-negotiable `qemu-guest-agent` (automated checking reads answers through
+   it) and the VMID ranges the malware sandbox reserves:
+   [lab-vm-templates.md](lab-vm-templates.md). Kali is for labs that actually
+   run offensive tooling — it is not the default.
 
 ## 4. The platform guest
 

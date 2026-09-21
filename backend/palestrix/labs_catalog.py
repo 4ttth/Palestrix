@@ -72,12 +72,15 @@ CATALOG: tuple[CatalogLab, ...] = (
         slug="log-triage",
         title="Log Triage Under Fire",
         kind="vm",
-        # The Kali template already on the hypervisor. It carries the QEMU
-        # guest agent, which is what lets the checker read the answer files.
-        vm_template="Kali-Template",
+        # A minimal Debian guest, not Kali. This lab is `grep`, `awk` and four
+        # text files; the offensive toolchain buys it nothing and costs a
+        # multi-gigabyte disk copy per launch. What it actually needs is the
+        # QEMU guest agent, which is what lets the checker read the answers
+        # back. See docs/lab-vm-templates.md for how the template is built.
+        vm_template="debian12-min",
         access_mode="no-gui",
-        cpu=2,
-        ram_gb=2,
+        cpu=1,
+        ram_gb=1,
         ttl_minutes_default=90,
         ttl_minutes_max=240,
         scheme_kind="diff",

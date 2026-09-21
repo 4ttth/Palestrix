@@ -67,7 +67,7 @@ def test_applying_is_insert_only_and_idempotent(client):
         template = db.scalar(select(LabTemplate).where(LabTemplate.slug == "log-triage"))
         assert template is not None
         assert template.kind == "vm"
-        assert template.vm_template == "Kali-Template"
+        assert template.vm_template == "debian12-min"
 
         scheme = db.scalar(
             select(GradingScheme).where(GradingScheme.lab_template_id == template.id)
@@ -140,3 +140,16 @@ def test_the_bound_module_becomes_gated_once_the_lab_exists(client, student):
         db.commit()
     finally:
         db.close()
+
+
+def test_shipped_labs_stay_lightweight():
+    """A lab ships a VM size, and that size is now what the hypervisor builds
+    (ProxmoxProvider.provision sets cores/memory on the clone). Keeping the
+    ceiling here means an accidental bump to a distro-sized default has to be
+    argued for rather than merged."""
+    for spec in CATALOG:
+        if spec.kind != "vm":
+            continue
+        assert spec.vm_template, f"{spec.slug} is a vm lab with no template"
+        assert spec.cpu <= 2, f"{spec.slug} asks for {spec.cpu} vCPU"
+        assert spec.ram_gb <= 2, f"{spec.slug} asks for {spec.ram_gb} GB RAM"

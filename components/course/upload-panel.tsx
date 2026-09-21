@@ -259,7 +259,7 @@ export function UploadPanel({
                   id="vm-template"
                   value={vmTemplate}
                   onChange={(e) => setVmTemplate(e.target.value)}
-                  placeholder="kali-web-2.1"
+                  placeholder="debian12-min"
                   className="font-mono"
                 />
                 <p className="text-[13px] text-muted">
