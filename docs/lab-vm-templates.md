@@ -67,9 +67,12 @@ Keep lab templates out of the sandbox's ranges; the coordinator recycles
 
 ## Build `debian12-min` (VMID 8001)
 
-The Debian generic cloud image is already minimal, already has
-`qemu-guest-agent`, and already brings up DHCP — so there is no ISO install to
-sit through. On the Proxmox host:
+The Debian generic cloud image is already minimal and already brings up DHCP,
+so there is no ISO install to sit through. It does **not** ship
+`qemu-guest-agent` — verified by booting one: the VM runs, cloud-init runs, and
+`qm agent <vmid> ping` stays silent. Since the agent is what publishes the
+lab's address and what the grader reads answers through, install it into the
+image before the template is built. On the Proxmox host:
 
 ```sh
 cd /var/lib/vz/template/iso
@@ -84,6 +87,18 @@ qm set 8001 --scsi0 local-lvm:vm-8001-disk-0 --boot order=scsi0
 qm set 8001 --ide2 local-lvm:cloudinit
 qm disk resize 8001 scsi0 4G
 ```
+
+Now add the agent. `virt-customize` (from `libguestfs-tools`, already present on
+a Proxmox node) edits the disk offline, so there is no first boot to log into
+and no throwaway credential to clean up afterwards:
+
+```sh
+qm stop 8001 2>/dev/null   # only if it was started
+virt-customize -a /dev/pve/vm-8001-disk-0   --install qemu-guest-agent   --run-command 'systemctl enable qemu-guest-agent'
+```
+
+The alternative — boot it, SSH in, `apt install` — needs a cloud-init login and
+a network the lab VLAN deliberately does not have, so prefer the offline edit.
 
 Four gigabytes of disk is deliberate: it is the number every clone copies.
 
