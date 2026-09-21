@@ -30,6 +30,7 @@ from urllib.parse import quote
 import httpx
 
 from ..config import get_settings
+from ..tls import client_verify
 from . import allocate_cidr, allocate_vlan
 
 logger = logging.getLogger("palestrix.tenancy.cloudstack")
@@ -55,7 +56,9 @@ class CloudStackCloud:
         self._offering_id = settings.cloudstack_network_offering_id
         self._client = client or httpx.Client(
             base_url=settings.cloudstack_endpoint,
-            verify=settings.cloudstack_verify_tls,
+            verify=client_verify(
+                settings.cloudstack_verify_tls, settings.cloudstack_ca_bundle
+            ),
             timeout=settings.cloudstack_timeout_seconds,
         )
 

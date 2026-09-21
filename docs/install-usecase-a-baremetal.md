@@ -301,6 +301,8 @@ the management network, never on a tenant VLAN.
    PALESTRIX_PROXMOX_TOKEN_ID=palestrix@pve!orchestrator
    PALESTRIX_PROXMOX_TOKEN_SECRET=<token secret>
    PALESTRIX_PROXMOX_NODE=pve
+   # Proxmox's self-signed cluster CA, copied from the node (see the note below).
+   PALESTRIX_PROXMOX_CA_BUNDLE=/etc/palestrix/pve-root-ca.pem
    PALESTRIX_PROXMOX_BRIDGE=vmbr0
    PALESTRIX_PROXMOX_ISO_STORAGE=local
 
@@ -311,11 +313,39 @@ the management network, never on a tenant VLAN.
    PALESTRIX_TENANT_CIDR_POOL=10.24.0.0/16
    ```
 
-   > **Note** — production TLS to Proxmox needs a real certificate on the host;
-   > the boot guard refuses `PALESTRIX_PROXMOX_VERIFY_TLS=false`. Proxmox ACME
-   > integration: `pvenode acme account register` + `pvenode acme cert order`,
-   > or install your internal CA in the platform guest. (`PALESTRIX_PROXMOX_HOST`
-   > must then match the certificate's name.)
+   > **Note** — production TLS to Proxmox. The boot guard refuses
+   > `PALESTRIX_PROXMOX_VERIFY_TLS=false`, so the platform has to trust the
+   > host's certificate. Two ways:
+   >
+   > - **Proxmox's own cluster CA** (the default, self-signed). Copy
+   >   `/etc/pve/pve-root-ca.pem` from the node into the platform guest and
+   >   point `PALESTRIX_PROXMOX_CA_BUNDLE` at it. Do *not* instead drop it in
+   >   the guest's system trust store: that CA carries no keyUsage extension,
+   >   and Python 3.13+ verifies the system store under
+   >   `ssl.VERIFY_X509_STRICT`, which rejects it with
+   >   `CA cert does not include key usage extension`. The bundle setting
+   >   pins the CA and relaxes that one conformance check (see
+   >   `backend/palestrix/tls.py`); signature, chain, expiry and hostname are
+   >   all still verified.
+   > - **A real certificate**, via Proxmox ACME: `pvenode acme account
+   >   register` + `pvenode acme cert order`. No bundle setting needed.
+   >
+   > Either way `PALESTRIX_PROXMOX_HOST` must match a name the certificate
+   > actually carries. The self-signed node certificate is issued for the node
+   > hostname, not for its management IP, so
+   > `PALESTRIX_PROXMOX_HOST=https://10.0.10.1:8006` fails hostname
+   > verification even once the CA is trusted. Use the hostname and give the
+   > platform guest an `/etc/hosts` entry for it:
+   >
+   > ```sh
+   > # on the node: confirm the names the certificate carries
+   > openssl x509 -in /etc/pve/nodes/$(hostname)/pve-ssl.pem -noout -ext subjectAltName
+   > # in the platform guest: /etc/hosts
+   > 10.0.10.1  socproxmoxa.loc socproxmoxa
+   > ```
+   >
+   > To put the management IP in the certificate instead, add it to the node's
+   > hosts file and re-issue with `pvecm updatecerts --force`.
 
 4. Initialize the schema. Tables are created (and later phases' columns
    migrated) automatically at every startup, so this is just the first boot.
