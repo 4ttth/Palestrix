@@ -173,11 +173,24 @@ own services apart from DHCP:
 
 ```sh
 # lab VLANs must not be routed into MGMT or the platform network
-iptables -I FORWARD -s 10.24.0.0/16 -d 192.168.3.0/24 -j DROP
-iptables -I FORWARD -s 10.24.0.0/16 -d 10.0.10.0/24  -j DROP
-# ...nor reach the host itself, except the DHCP it needs
-iptables -I INPUT -s 10.24.0.0/16 -p udp --dport 67 -j ACCEPT
-iptables -I INPUT -s 10.24.0.0/16 -j DROP
+iptables -I FORWARD 1 -s 10.24.0.0/16 -d 192.168.3.0/24 -j DROP
+iptables -I FORWARD 1 -s 10.24.0.0/16 -d 10.0.10.0/24  -j DROP
+# ...nor reach the host itself, except the DHCP it needs. Give the positions
+# explicitly: two bare `-I` inserts both land at the top, which would leave
+# the catch-all drop ABOVE the DHCP exception and silently kill every lease.
+iptables -I INPUT 1 -s 10.24.0.0/16 -p udp --dport 67 -j ACCEPT
+iptables -I INPUT 2 -s 10.24.0.0/16 -p icmp --icmp-type echo-request -j ACCEPT
+iptables -I INPUT 3 -s 10.24.0.0/16 -j DROP
+```
+
+The ICMP exception is what keeps `ping <gateway>` working from a lab, which
+is the first line of the verification checklist below; without it the
+catch-all drop swallows echo requests to the gateway too.
+
+Check the order came out right — the accept must be listed first:
+
+```sh
+iptables -S INPUT
 ```
 
 Persist them (`iptables-persistent`, or the Proxmox host firewall) — an
