@@ -69,6 +69,8 @@ async def lifespan(app: FastAPI):
     # without a manual seed step. Insert-and-reconcile only: no path,
     # module, or completion is ever deleted here.
     if get_settings().academy_catalog_autoload:
+        from sqlalchemy.exc import IntegrityError
+
         from .academy_catalog import ensure_catalog
         from .db import SessionLocal as _SessionLocal
 
@@ -82,6 +84,15 @@ async def lifespan(app: FastAPI):
                     len(report["paths_created"]),
                     len(report["modules_created"]),
                 )
+        except IntegrityError:
+            # Another worker published first. The advisory lock in
+            # ensure_catalog makes this rare, but two API hosts pointed at one
+            # database would still meet here, and losing the race is a normal
+            # outcome rather than a failure worth a traceback.
+            catalog_db.rollback()
+            logging.getLogger("palestrix.academy").info(
+                "academy catalog already published by another worker"
+            )
         except Exception:  # pragma: no cover - never block startup on content
             catalog_db.rollback()
             logging.getLogger("palestrix.academy").exception(

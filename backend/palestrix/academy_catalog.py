@@ -29,7 +29,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from .models import Module, Path
@@ -137,11 +137,36 @@ CATALOG: tuple[CatalogPath, ...] = (
 )
 
 
+# Arbitrary but fixed: "PLXC". Any process applying the catalog takes this
+# lock, so they queue instead of colliding.
+_CATALOG_LOCK_KEY = 0x504C5843
+
+
+def _serialise(db: Session) -> None:
+    """Queue concurrent catalog writers behind a transaction-scoped lock.
+
+    The API runs under several uvicorn workers and every one of them applies
+    the catalog in its startup lifespan. Without this they race on the
+    paths.slug unique constraint: one wins and the rest take a
+    UniqueViolation and roll back. The data still converged -- every worker
+    applies the same catalog, so whoever commits first wins wholesale -- but
+    each first restart after a catalog change logged a traceback, and a
+    traceback that is normal is a traceback that hides a real failure.
+
+    Postgres only; SQLite has no advisory locks and no concurrent startup to
+    protect against. The lock releases when the transaction ends.
+    """
+    if db.get_bind().dialect.name != "postgresql":
+        return
+    db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": _CATALOG_LOCK_KEY})
+
+
 def ensure_catalog(db: Session, catalog: tuple[CatalogPath, ...] = CATALOG) -> dict:
     """Apply the catalog to `db`. Idempotent; returns what it changed.
 
     The caller owns the transaction: nothing is committed here.
     """
+    _serialise(db)
     report = {"paths_created": [], "modules_created": [], "modules_renumbered": 0}
 
     for spec in catalog:
