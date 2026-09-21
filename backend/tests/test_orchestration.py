@@ -455,3 +455,55 @@ def test_proxmox_agent_ipv4_skips_apipa_and_loopback():
         raise AssertionError("APIPA-only should raise, not return a link-local address")
     except ProxmoxError as exc:
         assert "no usable IPv4" in str(exc)
+
+
+# -- fork safety (RQ work horse) ------------------------------------------------
+
+
+def test_rq_entry_point_disposes_the_inherited_pool(monkeypatch):
+    """RQ forks a work horse per job, so the child inherits the parent's
+    pooled PostgreSQL sockets. Sharing one TLS connection across two
+    processes corrupts the record stream and kills the job's transaction
+    mid-provision, so the entry point must drop the pool before any work --
+    and with close=False, which abandons the sockets instead of closing
+    connections the parent still owns."""
+    from palestrix.orchestration import queue as queue_mod
+
+    order: list[str] = []
+    disposed: dict = {}
+
+    class FakeEngine:
+        def dispose(self, close=True):
+            order.append("dispose")
+            disposed["close"] = close
+
+    monkeypatch.setattr("palestrix.db.engine", FakeEngine())
+    monkeypatch.setattr(queue_mod, "run_job", lambda *a, **k: order.append("run_job"))
+    monkeypatch.setattr(
+        "palestrix.events.dispatch_pending", lambda *a, **k: order.append("dispatch")
+    )
+
+    queue_mod.run_job_and_dispatch("instance.provision", {"instance_id": "lab-0001"})
+
+    assert order == ["dispose", "run_job", "dispatch"], order
+    assert disposed["close"] is False, "close=True would break the parent's connection"
+
+
+def test_inline_backend_does_not_dispose(monkeypatch):
+    """The inline backend runs in the calling process -- no fork, nothing
+    inherited. Disposing there would throw away the API's own live pool."""
+    from palestrix.orchestration import queue as queue_mod
+
+    calls: list[str] = []
+
+    class FakeEngine:
+        def dispose(self, close=True):
+            calls.append("dispose")
+
+    monkeypatch.setattr("palestrix.db.engine", FakeEngine())
+    monkeypatch.setattr(queue_mod, "_handlers", {"noop": lambda **k: None})
+    monkeypatch.setattr(queue_mod, "_ensure_handlers", lambda: None)
+
+    queue_mod.run_job("noop", {})
+
+    assert calls == []

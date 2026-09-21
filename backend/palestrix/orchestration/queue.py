@@ -63,12 +63,44 @@ def run_job(name: str, kwargs: dict) -> None:
 def run_job_and_dispatch(name: str, kwargs: dict) -> None:
     """RQ entry point: run the job, then make one webhook delivery attempt
     for anything it emitted (in-app requests do this as a background task;
-    in a worker there is no request to piggyback on)."""
+    in a worker there is no request to piggyback on).
+
+    This runs in RQ's forked work horse, so the first thing it must do is
+    drop the connection pool it inherited -- see ``_dispose_inherited_pool``.
+    """
+    _dispose_inherited_pool()
     run_job(name, kwargs)
     from ..db import SessionLocal
     from ..events import dispatch_pending
 
     dispatch_pending(SessionLocal())
+
+
+def _dispose_inherited_pool() -> None:
+    """Drop the parent's pooled connections in a freshly forked child.
+
+    RQ forks a work horse per job, and the child inherits every live socket
+    in the engine's pool. Both processes then believe they own the same
+    PostgreSQL connection; interleaved traffic corrupts the TLS record
+    stream, and the server drops the link mid-transaction::
+
+        LOG:  SSL error: decryption failed or bad record mac
+        LOG:  unexpected EOF on client connection with an open transaction
+
+    On the client that surfaces as ``OperationalError: consuming input
+    failed: SSL error: unexpected eof while reading``, which rolls the job's
+    whole transaction back -- so a provision that really did clone,
+    configure and boot a VM records nothing and leaves the row stuck in
+    ``provisioning`` with an orphaned guest on the hypervisor.
+
+    ``close=False`` is the important part: it abandons the inherited sockets
+    rather than closing them. Closing would send a termination packet down a
+    connection the parent still owns, breaking it there too. ``pool_pre_ping``
+    does not help -- the connection is alive, it is shared.
+    """
+    from ..db import engine
+
+    engine.dispose(close=False)
 
 
 def enqueue(name: str, *, job_timeout: int | None = None, **kwargs) -> None:
