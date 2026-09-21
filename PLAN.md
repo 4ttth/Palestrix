@@ -473,6 +473,24 @@ below carries a dated entry.
 
 ---
 
+## 8b. Where the remaining work is written down
+
+This document is the ledger: it reconciles the paper against the repository
+and tracks the study's workstreams. The engineering backlog it assumes is
+already solid lives in two companion plans, each written so a model can pick
+up one item and finish it:
+
+| Plan | Covers |
+| --- | --- |
+| [PLAN-DEVELOPMENT.md](PLAN-DEVELOPMENT.md) | DEV-01 … DEV-13: missing CI, 39 academy modules with no body, the uncommitted OpenAPI spec, subsystems with no UI, unpaginated lists, tooling |
+| [PLAN-SECURITY.md](PLAN-SECURITY.md) | SEC-01 … SEC-15: session revocation, account disablement, the earn-cap race, LTI replay across workers, the sandbox seal, and hardening |
+
+Neither replaces the workstreams in §6. W1.1 (Track A harness), W1.3 (ISO
+25010 instrument), and W5 (VirtualBox demo path) stay here, and both plans say
+so explicitly so nobody starts them from the wrong document.
+
+---
+
 ## 9. Progress log
 
 Newest first. One entry per session: what changed, what was verified, what is

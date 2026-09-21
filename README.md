@@ -16,6 +16,12 @@ this codebase and that paper disagree, the paper wins.
 > **Working here?** Read **[PLAN.md](PLAN.md)** first. It carries the
 > reconciliation ledger, the active workstreams, and the progress log. This
 > README describes what the platform *is*; PLAN.md describes what is *left*.
+>
+> Two backlogs hang off it, each written to be executed item by item:
+> **[PLAN-DEVELOPMENT.md](PLAN-DEVELOPMENT.md)** (promises the code does not
+> keep, surfaces with no way to reach them, missing CI) and
+> **[PLAN-SECURITY.md](PLAN-SECURITY.md)** (the security gaps still open,
+> ordered by severity).
 
 ---
 
@@ -185,6 +191,8 @@ Planning and open items for this path: [PLAN.md §W5 and G-11](PLAN.md).
 | Document | Contents |
 | --- | --- |
 | [PLAN.md](PLAN.md) | **Re-plan, reconciliation ledger, progress** |
+| [PLAN-DEVELOPMENT.md](PLAN-DEVELOPMENT.md) | Development backlog, ordered and executable |
+| [PLAN-SECURITY.md](PLAN-SECURITY.md) | Security backlog, ordered by severity |
 | [docs/architecture.md](docs/architecture.md) | System map, services, build order |
 | [docs/ephemeral-lifecycle.md](docs/ephemeral-lifecycle.md) | Instance state machine, reaper, tenancy invariants |
 | [docs/rbac-matrix.md](docs/rbac-matrix.md) | Role/capability matrix and gamification rules |
