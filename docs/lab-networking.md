@@ -146,13 +146,50 @@ path.
 
 ### Locking the lab away from MGMT/WAN
 
-The isolation is structural: `vmbr1` has **no uplink to your WAN and no host
-IP on the management side**, so a lab VM can talk only to its own VLAN's
-gateway and whatever that gateway routes. Do **not** add a default route from
-the tenant VLANs to `vmbr0`. If a lab needs internet (e.g. `apt`), give that
-gateway a NAT rule to the WAN explicitly and only for the VLANs that need it —
-never a bridge. Inter-tenant isolation is already handled: different VLAN tags
+> **The isolation is NOT structural — you must add firewall rules.** An
+> earlier version of this document claimed that giving `vmbr1` no WAN uplink
+> and no management IP was sufficient. It is not, and a default Proxmox host
+> fails the check below. The tenant gateway (`vmbr1.100`) lives *on the
+> Proxmox host*, which is also on `vmbr0` and the platform's management
+> network, and Proxmox ships `net.ipv4.ip_forward=1`. DHCP hands the lab VM a
+> default route via that gateway, so the host happily routes lab traffic
+> straight into MGMT. Measured on a freshly provisioned lab VM:
+>
+> ```
+> lab VM -> 10.24.0.1      (its gateway)        REACHABLE   expected
+> lab VM -> 192.168.3.6:8006 (Proxmox UI)       REACHABLE   MUST NOT BE
+> lab VM -> 10.0.10.12:80  (PalestrIX app)      REACHABLE   MUST NOT BE
+> lab VM -> 1.1.1.1:443    (internet)           blocked     expected, no NAT
+> ```
+>
+> A student with root on a lab VM — which is the whole point of a lab — can
+> therefore reach the hypervisor API and the platform itself. Close it before
+> any untrusted user gets an instance.
+
+`vmbr1` having no WAN uplink does buy you one thing: no egress without an
+explicit NAT rule. Everything else needs enforcement. Drop forwarding between
+the tenant pool and every management network, and keep the lab off the host's
+own services apart from DHCP:
+
+```sh
+# lab VLANs must not be routed into MGMT or the platform network
+iptables -I FORWARD -s 10.24.0.0/16 -d 192.168.3.0/24 -j DROP
+iptables -I FORWARD -s 10.24.0.0/16 -d 10.0.10.0/24  -j DROP
+# ...nor reach the host itself, except the DHCP it needs
+iptables -I INPUT -s 10.24.0.0/16 -p udp --dport 67 -j ACCEPT
+iptables -I INPUT -s 10.24.0.0/16 -j DROP
+```
+
+Persist them (`iptables-persistent`, or the Proxmox host firewall) — an
+unsaved rule set dies at the next reboot and silently reopens the hole. If a
+lab needs internet (e.g. `apt`), add a NAT rule for that VLAN explicitly —
+never a bridge. Inter-tenant isolation *is* structural: different VLAN tags
 cannot see each other on a VLAN-aware bridge.
+
+A stronger variant, if you want the guarantee not to rest on the hypervisor's
+rule set: move the tenant gateway off the Proxmox host onto a small dedicated
+router VM with one leg per tenant VLAN and no management interface. Then there
+is no path to forward, rather than a path you have blocked.
 
 Verify from a lab VM's console: it can ping its gateway (`10.24.0.1`) and
 another VM in its own VLAN, but **cannot** reach the Proxmox host's management
