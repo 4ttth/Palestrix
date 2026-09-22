@@ -317,6 +317,11 @@ the management network, never on a tenant VLAN.
    PALESTRIX_RP_ID=palestrix.example.edu
    PALESTRIX_ORIGIN=https://palestrix.example.edu
    PALESTRIX_CORS_ORIGINS=https://palestrix.example.edu
+   # A passkey ceremony spans two requests, and the unit below runs four
+   # uvicorn workers, so the challenge has to live somewhere all four can
+   # read. Leave this on the in-process default and every passkey is
+   # rejected as "challenge expired or missing".
+   PALESTRIX_WEBAUTHN_CHALLENGE_BACKEND=redis
 
    PALESTRIX_STORAGE_BACKEND=minio
    PALESTRIX_MINIO_ENDPOINT=127.0.0.1:9000
@@ -661,6 +666,7 @@ Abbreviated:
 |---|---|---|
 | API unit exits immediately | Boot guard finding | `journalctl -u palestrix-api` names it; fix the env, don't bypass |
 | Passkey enrollment fails | `PALESTRIX_RP_ID`/`_ORIGIN` don't match the browser origin | Both must be the exact public domain, https |
+| Passkeys fail with "challenge expired or missing" | `PALESTRIX_WEBAUTHN_CHALLENGE_BACKEND` is the in-process default, so the options and verify requests hit different uvicorn workers | Set it to `redis` and restart `palestrix-api` |
 | Instance stuck in `provisioning` | Worker not running, or Proxmox token wrong | `systemctl status palestrix-worker`; test the token with `curl -k -H "Authorization: PVEAPIToken=<id>=<secret>" https://10.0.10.11:8006/api2/json/nodes` |
 | Two tenants can reach each other | `vmbr0` not VLAN-aware, or `net0` not tagged | Confirm `bridge-vlan-aware yes` (step 3.4) and that the tenant's `vlan_id` is set in the admin console |
 | Launch refused `quota_exceeded` | Tenant at instance/vCPU/RAM cap | Raise the tenant quota in the admin console, or destroy instances |

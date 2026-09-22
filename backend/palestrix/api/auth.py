@@ -160,24 +160,33 @@ def webauthn_login_verify(
     user = db.scalar(select(User).where(User.email == email))
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "passkey rejected")
-    creds = db.scalars(
-        select(WebAuthnCredential).where(WebAuthnCredential.user_id == user.id)
-    ).all()
-    last_error: Exception | None = None
-    for cred in creds:
-        try:
-            cred.sign_count = webauthn_flow.verify_authentication(
-                user, cred, body.credential
+    # The assertion names the credential that signed it, so resolve that one
+    # rather than trying each enrolled passkey. A loop would consume the
+    # single-use challenge on its first miss and fail every account with more
+    # than one passkey enrolled.
+    credential_id = webauthn_flow.assertion_credential_id(body.credential)
+    cred = None
+    if credential_id is not None:
+        cred = db.scalar(
+            select(WebAuthnCredential).where(
+                WebAuthnCredential.user_id == user.id,
+                WebAuthnCredential.credential_id == credential_id,
             )
-            db.commit()
-            return schemas.TokenOut(
-                access_token=create_session_token(
-                    user.id, user.role.value, user.tenant_id
-                )
-            )
-        except Exception as exc:  # try the next enrolled credential
-            last_error = exc
-    raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"passkey rejected: {last_error}")
+        )
+    if cred is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "passkey rejected")
+    try:
+        cred.sign_count = webauthn_flow.verify_authentication(
+            user, cred, body.credential
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, f"passkey rejected: {exc}"
+        )
+    db.commit()
+    return schemas.TokenOut(
+        access_token=create_session_token(user.id, user.role.value, user.tenant_id)
+    )
 
 
 @router.get("/webauthn/credentials")

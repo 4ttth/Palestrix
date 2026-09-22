@@ -212,6 +212,9 @@ PALESTRIX_DATABASE_URL=postgresql+psycopg://palestrix:<DB_PASSWORD>@<rds-endpoin
 PALESTRIX_RP_ID=palestrix.example.edu
 PALESTRIX_ORIGIN=https://palestrix.example.edu
 PALESTRIX_CORS_ORIGINS=https://palestrix.example.edu
+# Required whenever more than one API worker or instance serves traffic: a
+# passkey ceremony spans two requests and the challenge must be shared.
+PALESTRIX_WEBAUTHN_CHALLENGE_BACKEND=redis
 
 # Object storage / S3: the storage client is S3-compatible.
 PALESTRIX_STORAGE_BACKEND=minio

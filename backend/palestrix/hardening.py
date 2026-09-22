@@ -82,6 +82,13 @@ def production_readiness(settings: Settings) -> list[str]:
             trust_context(bundle)
         except TrustConfigError as exc:
             findings.append(f"PALESTRIX_{name}_CA_BUNDLE is unusable: {exc}")
+    if settings.webauthn_challenge_backend != "redis":
+        findings.append(
+            "PALESTRIX_WEBAUTHN_CHALLENGE_BACKEND is in-process memory; the "
+            "API runs several uvicorn workers, so the verify request lands on "
+            "a different worker than the options request and every passkey is "
+            'rejected as "challenge expired or missing" — set it to "redis"'
+        )
     if settings.queue_backend == "inline":
         findings.append(
             "PALESTRIX_QUEUE_BACKEND is inline; production provisions through "

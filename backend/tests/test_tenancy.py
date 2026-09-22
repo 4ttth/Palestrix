@@ -488,6 +488,7 @@ def test_production_readiness_guard():
         origin="https://palestrix.example.edu",
         cors_origins="https://palestrix.example.edu",
         queue_backend="redis",
+        webauthn_challenge_backend="redis",
         reaper_enabled=True,
         storage_backend="minio",
         _env_file=None,

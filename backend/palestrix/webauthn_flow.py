@@ -4,12 +4,22 @@ The browser side uses SimpleWebAuthn (Phase 5 wiring): it fetches options
 from these helpers, runs navigator.credentials.create()/get(), and posts the
 response back for verification.
 
-Challenges are held in an in-process store with a short TTL. That is correct
-for a single API process; the multi-process deployment moves this dict to
-Redis (same interface) in Phase 4 when Redis arrives for the job queue.
+A ceremony spans two requests -- options, then verify -- and the challenge
+issued by the first has to be readable by the second. With
+``webauthn_challenge_backend = "memory"`` it is held in an in-process dict,
+which is correct for exactly one API process. The deployment runs
+``uvicorn --workers 4``, so the verify request usually lands on a different
+worker than the options request did, finds no challenge, and rejects a
+perfectly good passkey. Setting "redis" puts the challenge somewhere all the
+workers can see; the production boot guard fails on "memory" so this cannot
+be left latent again.
+
+Either way a challenge is single-use and read destructively, so a replayed
+assertion finds nothing.
 """
 
 import base64
+import json
 import time
 
 from webauthn import (
@@ -31,9 +41,24 @@ from .models import User, WebAuthnCredential
 
 _CHALLENGE_TTL = 300  # seconds
 _challenges: dict[str, tuple[bytes, float]] = {}
+_REDIS_PREFIX = "palestrix:webauthn:challenge:"
+
+
+def _redis():
+    """The shared challenge store, or None to use the in-process dict."""
+    settings = get_settings()
+    if settings.webauthn_challenge_backend != "redis":
+        return None
+    import redis as redis_lib  # deployment dependency, imported lazily
+
+    return redis_lib.from_url(settings.redis_url)
 
 
 def _remember(key: str, challenge: bytes) -> None:
+    client = _redis()
+    if client is not None:
+        client.set(_REDIS_PREFIX + key, challenge, ex=_CHALLENGE_TTL)
+        return
     now = time.monotonic()
     stale = [k for k, (_, t) in _challenges.items() if now - t > _CHALLENGE_TTL]
     for k in stale:
@@ -42,6 +67,13 @@ def _remember(key: str, challenge: bytes) -> None:
 
 
 def _recall(key: str) -> bytes | None:
+    """Read a challenge and consume it. Single-use: a second call for the
+    same ceremony gets None, so an assertion cannot be replayed."""
+    client = _redis()
+    if client is not None:
+        # GETDEL keeps read-and-consume atomic across workers; without it two
+        # concurrent verifies could both see the same live challenge.
+        return client.getdel(_REDIS_PREFIX + key)
     item = _challenges.pop(key, None)
     if item is None:
         return None
@@ -117,6 +149,29 @@ def authentication_options(user: User, credentials: list[WebAuthnCredential]) ->
     )
     _remember(f"auth:{user.id}", options.challenge)
     return options_to_json(options)
+
+
+def assertion_credential_id(credential_json: str) -> str | None:
+    """The b64url credential id the authenticator signed with.
+
+    An assertion names the credential it used, so the caller can look that
+    one up instead of trying each enrolled passkey in turn. Trying them in
+    turn cannot work anyway: the challenge is single-use, so the first failed
+    attempt consumes it and every later one dies on a missing challenge
+    rather than on the signature.
+    """
+    try:
+        raw = json.loads(credential_json).get("id")
+    except (ValueError, AttributeError):
+        return None
+    if not isinstance(raw, str) or not raw:
+        return None
+    # SimpleWebAuthn sends standard b64url; normalise padding/alphabet so the
+    # comparison against a stored id is not defeated by formatting alone.
+    try:
+        return b64url(from_b64url(raw))
+    except (ValueError, TypeError):
+        return None
 
 
 def verify_authentication(

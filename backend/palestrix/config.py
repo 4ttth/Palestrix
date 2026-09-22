@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     rp_id: str = "localhost"
     rp_name: str = "PalestrIX"
     origin: str = "http://localhost:3000"
+    # Where WebAuthn challenges live between the options call and the verify
+    # call. "memory" is an in-process dict: correct for one API process, and
+    # broken under `uvicorn --workers N`, because the two calls land on
+    # different workers and the verify cannot see the challenge the options
+    # call issued. Any multi-worker deployment must set "redis" -- the
+    # production boot guard fails on "memory" for that reason.
+    webauthn_challenge_backend: str = "memory"  # "memory" | "redis"
 
     # Object storage
     storage_backend: str = "local"  # "local" | "minio"
