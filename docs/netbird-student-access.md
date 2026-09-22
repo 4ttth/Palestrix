@@ -47,64 +47,153 @@ There is already a `netbird-server` VM on the *other* Proxmox
 be deliberate about the collision: both want the same well-known ports behind
 **one** public IP, and a port can be forwarded to exactly one host.
 
-Pick one before you start:
+**Settled: a separate server on a different UDP port.** The old deployment is
+left alone, and this one takes `3479/UDP` instead of `3478`.
 
-- **Different external ports** for the new server (e.g. forward `:3479/UDP`
-  externally to `:3478` internally), and a different hostname on the reverse
-  proxy. Workable, slightly awkward to document to students.
-- **Reuse the existing deployment** and give PalestrIX its own NetBird *group*
-  and network routes rather than its own server. Least infrastructure, but the
-  student overlay then shares a control plane with the SOC range.
-- **Retire the old one** if it is not in active use.
+It is one port rather than a translated pair. `getting-started.sh` maps the
+STUN port straight through (`$PORT:$PORT/udp`) and advertises the same number
+to peers, so 3479 inside, 3479 outside and 3479 in the forward is simpler than
+forwarding `:3479` to `:3478` — and it removes the mismatch where peers are
+told to dial a port the forward does not answer on.
 
-Nothing below works until this is settled, because the port forwards are the
-part that cannot be shared.
+The TCP side needs no new forward at all: openresty routes by `server_name`,
+so `netbird.hausoc.org` is one more vhost on LXC 117 beside the others.
 
-## The VM
+> Measured on 2026-09-22, before building: nothing on `192.168.3.0/24` was
+> listening on 33073 (management), 10000 (signal) or 3478 (STUN) — only the
+> router, the reverse proxy, csiagym and `.107`, on 80/443. The old
+> `netbird-server` appears to be stopped rather than serving. It is still left
+> untouched, because "stopped today" is not "retired".
 
-On pve2 (`socproxmoxa`), where the labs are — the routing peer should be near
-the subnets it advertises.
+## The VM — built
+
+Built 2026-09-22 on pve2 (`socproxmoxa`), where the labs are: the control
+plane should be near the subnets it serves.
 
 | | |
 |---|---|
-| OS | Debian 12 |
+| VMID / name | `203` / `netbird-labs`, distinct from the existing `netbird-server` |
+| OS | Debian 12 (full clone of the `debian12-min` template, VMID 8001) |
 | Size | 2 vCPU, 4 GB RAM, 20 GB disk |
-| NIC | `vmbr0` (LAN) — it needs to be reachable from the router for its forwards |
-| Name | `netbird-labs`, to keep it distinct from the existing `netbird-server` |
+| NIC | `vmbr0` (LAN) — reachable from the router, which forwards UDP to it |
+| Address | `192.168.3.30/24`, gw `192.168.3.1`, static |
+| Login | `sysop`, key `/root/.ssh/palestrix_prov` on pve2 |
 
-It must **not** get a leg on a tenant VLAN. It is the control plane; the
-routing peer is a separate role (below).
+The address is static on purpose: a router forward needs a target that does not
+move. **Exclude `192.168.3.30` from the router's DHCP pool** if it is not
+already outside it — a lease handed to some other device would silently break
+the overlay.
 
-## Install
+It has **no** leg on a tenant VLAN. It is the control plane; the routing peer
+is a separate role (below).
 
-NetBird's self-hosted quickstart brings up management, signal, the dashboard,
-a TURN server and an identity provider together. Follow the upstream guide
-rather than a copy of it here — it changes, and a stale transcription is worse
-than a link:
+Rebuild, if it ever comes to that:
 
-<https://docs.netbird.io/selfhosted/selfhosted-quickstart>
+```sh
+qm clone 8001 203 --name netbird-labs --full true --storage local-lvm
+qm set 203 --cores 2 --memory 4096 --agent enabled=1 --net0 virtio,bridge=vmbr0
+qm set 203 --ipconfig0 ip=192.168.3.30/24,gw=192.168.3.1 --nameserver "1.1.1.1 8.8.8.8"
+qm set 203 --ciuser sysop --sshkeys /root/.ssh/palestrix_prov.pub
+qm resize 203 scsi0 20G && qm start 203
+```
 
-What it will ask you for, and what this site's answers are:
+## Install — done
 
-- **A domain**, e.g. `netbird.hausoc.org`. Point it at `122.3.149.244`.
-- **TLS.** The installer can obtain Let's Encrypt certificates itself, which
-  needs 80/443 reaching *this* VM. Your 443 currently goes to LXC 117, so
-  either add a proxy host there for `netbird.hausoc.org` and let openresty
-  terminate TLS, or move the forward. The proxy route is less disruptive.
-- **Ports.** Confirm the current list against upstream, but expect roughly:
-  `443/TCP` (dashboard, management, signal), `3478/UDP` (STUN/TURN) and a
-  TURN relay range. **Only the UDP ones need a genuine router forward** — the
-  HTTP side can sit behind openresty like everything else.
+Two things the previous draft got wrong, both found by checking upstream
+instead of trusting it:
 
-> openresty cannot carry STUN/TURN. It proxies HTTP(S); those are UDP and
-> need their own forward. This is the same constraint that stopped the
-> reverse proxy from being an answer for WireGuard.
+- **The Zitadel quickstart is retired.** `getting-started-with-zitadel.sh` now
+  exits 1 with a notice. The current installer is `getting-started.sh`, which
+  ships an embedded Dex identity provider, so no separate IdP is needed.
+- **There is no TURN relay port range to forward.** In 0.79.0 the relay is
+  multiplexed onto the management port and advertised as
+  `rels://netbird.hausoc.org:443` — it rides TCP 443 through openresty. Only
+  **one** UDP port needs a forward.
+
+Installed with Docker CE from the upstream Debian repo, then:
+
+```sh
+cd /opt/netbird
+curl -sSL https://github.com/netbirdio/netbird/releases/latest/download/getting-started.sh -o getting-started.sh
+chmod +x getting-started.sh
+NETBIRD_DOMAIN=netbird.hausoc.org NETBIRD_NON_INTERACTIVE=true NETBIRD_REVERSE_PROXY_TYPE=2 NETBIRD_BIND_LOCALHOST_ONLY=false NETBIRD_HTTP_PROTOCOL=https NETBIRD_PORT=443   sudo -E ./getting-started.sh
+```
+
+`REVERSE_PROXY_TYPE=2` is the Nginx option — openresty is nginx, so the
+generated template applies. `BIND_LOCALHOST_ONLY=false` matters: the default
+binds `127.0.0.1` only, and our proxy is on a *different host*, so it could
+never reach the ports. `HTTP_PROTOCOL=https` with `PORT=443` sets the public
+URL that gets baked into the dashboard and the advertised peer config; TLS
+itself is openresty's job.
+
+Both containers carry `restart: unless-stopped` and docker is enabled, so the
+stack comes back by itself after a reboot.
+
+### The STUN port is not an installer knob
+
+`NETBIRD_STUN_PORT` looks like one but is not: the installer assigns its own
+default (3478) unconditionally, overwriting anything exported. Getting 3479
+took editing the two generated files and recreating:
+
+```sh
+cd /opt/netbird
+sudo sed -i 's/- 3478$/- 3479/' config.yaml               # advertised to peers
+sed -i "s|'3478:3478/udp'|'3479:3479/udp'|" docker-compose.yml  # the binding
+sudo docker compose up -d --force-recreate
+```
+
+Both had to change together. `config.yaml`'s `stunPorts` is what management
+hands out to clients, and the compose mapping is what actually listens — set
+only one and peers dial a port nothing answers on. Re-running the installer
+will reset both, so redo this after any upgrade.
+
+Resulting state, verified:
+
+| | |
+|---|---|
+| Version | NetBird 0.79.0 |
+| Dashboard | `192.168.3.30:8080` → 200 |
+| Server (management + signal + relay + OIDC) | `192.168.3.30:8081` → 200 on `/oauth2/.well-known/openid-configuration` |
+| STUN | listening on `0.0.0.0:3479/udp` |
+| Relay | `rels://netbird.hausoc.org:443`, multiplexed on the management port |
+
+## Still to do: DNS, one forward, one vhost
+
+The overlay does not answer until these three exist. Nothing on the VM needs
+touching for them.
+
+1. **DNS.** `netbird.hausoc.org` → `122.3.149.244`. It did not resolve as of
+   this build.
+2. **Router forward.** `3479/UDP` → `192.168.3.30:3479`, straight through, no
+   translation. This is the only forward required, and the only thing
+   openresty cannot carry — it proxies HTTP(S), and STUN is UDP.
+3. **openresty vhost** on LXC 117 (`192.168.3.4`) for `netbird.hausoc.org`,
+   terminating TLS and proxying to the VM. The installer wrote a template to
+   `/opt/netbird/nginx-netbird.conf`, but its upstreams point at `127.0.0.1`
+   because it assumes nginx is on the same host. On LXC 117 they must be:
+
+   ```nginx
+   upstream netbird_dashboard { server 192.168.3.30:8080; keepalive 10; }
+   upstream netbird_server    { server 192.168.3.30:8081; }
+   ```
+
+   Take the rest of the vhost from that template as generated. It already has
+   the parts that are easy to get wrong: `grpc_pass` for the management and
+   signal services, WebSocket upgrade on `/relay`, and day-long read timeouts
+   for the long-lived gRPC streams.
 
 ## The routing peer: how students reach `10.24.0.0/16`
 
 A NetBird peer can advertise subnets to the rest of the network. That peer is
 what bridges the overlay into the tenant VLANs, and **it should be the lab
 gateway**, not the Proxmox host.
+
+> **Not yet possible here.** As of 2026-09-22 pve2 has no lab gateway VM —
+> `qm list` shows 100-102, 200-202, 900 and the 8001 template, and nothing
+> else. So the control plane below is up but there is no routing peer, and the
+> overlay therefore carries no path to `10.24.0.0/16` yet. Build the gateway
+> from [lab-gateway-vm.md](lab-gateway-vm.md) first; this is the step that
+> makes the overlay actually useful.
 
 If you have built the router VM from [lab-gateway-vm.md](lab-gateway-vm.md),
 install the NetBird agent there — it already terminates every tenant VLAN, so
@@ -118,6 +207,10 @@ On the chosen peer:
 ```sh
 netbird up --management-url https://netbird.hausoc.org --setup-key <key>
 ```
+
+That URL is the public one, so it only works once DNS and the openresty vhost
+are in place. Setup keys come from the dashboard at
+`https://netbird.hausoc.org/setup-keys`, once it is reachable.
 
 Then, in the NetBird dashboard, add a **Network Route**:
 
@@ -160,6 +253,11 @@ only needs setting if you write your own.
 These are read by `GET /instances/access` and rendered in the lab page's
 connection modal. Nothing here is a secret: the platform never calls NetBird,
 and the setup key is issued to the student by NetBird's own console.
+
+**Set these last**, after DNS and the vhost resolve. Filling them in early is
+worse than leaving them empty: the modal would hand students a management URL
+that does not answer, where an empty setting correctly tells them remote
+access is not set up yet. They are still unset as of this build.
 
 ## Verification
 
