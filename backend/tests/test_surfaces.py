@@ -220,6 +220,70 @@ def test_admin_tenants_isos_and_providers(client, admin, student):
         assert client.get(path, headers=student).status_code == 403
 
 
+def test_iso_list_merges_cluster_storage(client, admin):
+    """ISOs already on the hypervisor must appear even though Palestrix's
+    own bucket has never seen them — the "No ISOs stored" report on a
+    cluster holding a dozen images."""
+    from palestrix.providers import register_provider
+    from palestrix.providers import DemoProvider
+
+    class ClusterProvider(DemoProvider):
+        def list_isos(self):
+            return [
+                {"key": "local:iso/debian-13.7.0-amd64-netinst.iso",
+                 "size": 792723456, "ctime": 1758000000},
+                # Also held by Palestrix: reported once, as "both".
+                {"key": "local:iso/surfaces-test.iso", "size": 17, "ctime": None},
+            ]
+
+    client.post(
+        "/api/v1/admin/isos",
+        files={"file": ("surfaces-test.iso", b"not-really-an-iso")},
+        headers=admin,
+    )
+    register_provider(ClusterProvider())
+    try:
+        isos = client.get("/api/v1/admin/isos", headers=admin).json()
+        by_name = {i["key"].rsplit("/", 1)[-1]: i for i in isos}
+
+        cluster_only = by_name["debian-13.7.0-amd64-netinst.iso"]
+        assert cluster_only["source"] == "cluster"
+        assert cluster_only["size"] == 792723456
+        assert cluster_only["last_modified"] is not None
+
+        # One entry, not two, for an ISO that lives in both places.
+        assert by_name["surfaces-test.iso"]["source"] == "both"
+        assert sum(
+            1 for i in isos if i["key"].endswith("surfaces-test.iso")
+        ) == 1
+    finally:
+        register_provider(DemoProvider())
+
+
+def test_iso_list_survives_an_unreachable_cluster(client, admin):
+    """A hypervisor that cannot answer must not blank the object-store
+    list — the admin still needs to see what Palestrix holds."""
+    from palestrix.providers import register_provider
+    from palestrix.providers import DemoProvider
+
+    class BrokenProvider(DemoProvider):
+        def list_isos(self):
+            raise RuntimeError("cluster unreachable")
+
+    client.post(
+        "/api/v1/admin/isos",
+        files={"file": ("kept.iso", b"bytes")},
+        headers=admin,
+    )
+    register_provider(BrokenProvider())
+    try:
+        resp = client.get("/api/v1/admin/isos", headers=admin)
+        assert resp.status_code == 200
+        assert any(i["key"].endswith("kept.iso") for i in resp.json())
+    finally:
+        register_provider(DemoProvider())
+
+
 # -- remote access help (lab connection modal) ----------------------------------
 
 

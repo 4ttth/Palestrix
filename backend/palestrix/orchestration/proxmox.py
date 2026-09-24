@@ -395,6 +395,61 @@ class ProxmoxProvider:
             self._wait_task(upid)
         return f"{self._iso_storage}:iso/{filename}"
 
+    def list_isos(self) -> list[dict]:
+        """The ISOs the cluster already has, from
+        ``GET /nodes/{node}/storage/{storage}/content?content=iso``.
+
+        The admin console used to list only Palestrix's own object-storage
+        bucket, so a cluster full of ISOs downloaded through the Proxmox UI
+        read as "No ISOs stored" — the upload path forwarded *to* the
+        cluster but nothing ever read *back* from it. Provisioning picks a
+        boot image from what Proxmox can actually attach, so the cluster is
+        the list that matters.
+
+        Returns the adapter-neutral shape the admin endpoint merges into
+        ``StoredObjectOut``: volid as the key, size in bytes, no mtime
+        (Proxmox reports ``ctime`` only for some storage types, so the
+        caller treats it as optional)."""
+        rows = self._get(
+            f"/nodes/{self._node}/storage/{self._iso_storage}/content"
+            "?content=iso"
+        ) or []
+        out = []
+        for row in rows:
+            volid = row.get("volid")
+            if not volid:
+                continue
+            out.append(
+                {
+                    "key": volid,
+                    "size": int(row.get("size") or 0),
+                    "ctime": row.get("ctime"),
+                }
+            )
+        out.sort(key=lambda r: r["key"].lower())
+        return out
+
+    def list_vm_templates(self) -> list[dict]:
+        """The VM templates on the node, for the lab-template picker.
+
+        A teacher publishing a lab has to name a ``vm_template``, and until
+        now that was a free-text box whose correct values lived only in a
+        runbook — a typo surfaced as a provisioning failure minutes later,
+        on the student's screen. This lets the UI offer the real list."""
+        vms = self._get(f"/nodes/{self._node}/qemu") or []
+        out = [
+            {
+                "name": vm.get("name") or str(vm.get("vmid")),
+                "vmid": int(vm.get("vmid")),
+                "cpu": int(vm.get("cpus") or 0),
+                "ram_mb": int((vm.get("maxmem") or 0) // (1024 * 1024)),
+            }
+            for vm in vms
+            if vm.get("template")
+        ]
+        out.sort(key=lambda r: r["name"].lower())
+        return out
+
     def _remove_vmid(self, vmid: int) -> None:
         try:
             upid = self._post(f"/nodes/{self._node}/qemu/{vmid}/status/stop")

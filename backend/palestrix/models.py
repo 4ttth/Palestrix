@@ -192,6 +192,14 @@ class Assignment(Base):
     )
     storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Lifecycle. "open" accepts submissions; "closed" keeps the assignment
+    # visible and graded but refuses new ones; "archived" also hides it from
+    # the student's course view. Deleting is a separate, destructive act —
+    # closing is what a teacher usually means, and it keeps the gradebook.
+    status: Mapped[str] = mapped_column(String(16), default="open")
+
+
+ASSIGNMENT_STATUSES = ("open", "closed", "archived")
 
 
 class Submission(Base):

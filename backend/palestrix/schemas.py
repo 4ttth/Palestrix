@@ -147,6 +147,19 @@ class AssignmentIn(BaseModel):
     lab_template_id: str | None = None
 
 
+class AssignmentUpdateIn(BaseModel):
+    """Every field optional: a PATCH carries only what changed, and
+    ``None`` on an optional column is a real value (clear the due date),
+    so the endpoint distinguishes "absent" from "null" via
+    ``model_fields_set`` rather than treating None as absent."""
+
+    title: str | None = None
+    kind: str | None = Field(default=None, pattern="^(file|quiz|lab|writeup)$")
+    due_at: datetime | None = None
+    lab_template_id: str | None = None
+    status: str | None = Field(default=None, pattern="^(open|closed|archived)$")
+
+
 class AssignmentOut(ORMModel):
     id: str
     course_id: str
@@ -155,6 +168,7 @@ class AssignmentOut(ORMModel):
     due_at: datetime | None
     lab_template_id: str | None
     storage_key: str | None
+    status: str = "open"
     submissions: int = 0
     graded: int = 0
 
@@ -630,6 +644,21 @@ class StoredObjectOut(BaseModel):
     key: str
     size: int
     last_modified: datetime | None = None
+    # Where this copy lives. "storage" is Palestrix's own object store;
+    # "cluster" is the hypervisor's ISO storage, which is what provisioning
+    # can actually boot from. An ISO uploaded through Palestrix reaches both
+    # and is reported once, as "both".
+    source: str = "storage"
+
+
+class VmTemplateOut(BaseModel):
+    """A bootable template on the hypervisor, offered to the lab-template
+    editor so ``vm_template`` is picked from a list instead of typed."""
+
+    name: str
+    vmid: int
+    cpu: int = 0
+    ram_mb: int = 0
 
 
 class ProviderOut(BaseModel):

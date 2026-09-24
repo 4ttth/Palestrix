@@ -336,3 +336,107 @@ def test_profile_name_edit_and_password_change(client):
         ).status_code
         == 200
     )
+
+
+# -- assignment lifecycle (edit / close / archive / delete) ----------------------
+
+
+def _course_with_assignment(client, teacher, student):
+    course = client.post(
+        "/api/v1/courses",
+        json={"code": "MGT 410", "title": "Assignment Lifecycle", "section": "A"},
+        headers=teacher,
+    ).json()
+    client.post(f"/api/v1/courses/{course['id']}/enroll", headers=student)
+    assignment = client.post(
+        f"/api/v1/courses/{course['id']}/assignments",
+        json={"title": "Fisrt draft", "kind": "file"},
+        headers=teacher,
+    ).json()
+    return course, assignment
+
+
+def test_assignment_can_be_edited(client, teacher, student):
+    course, assignment = _course_with_assignment(client, teacher, student)
+    assert assignment["status"] == "open"
+
+    fixed = client.patch(
+        f"/api/v1/courses/{course['id']}/assignments/{assignment['id']}",
+        json={"title": "First draft"},
+        headers=teacher,
+    )
+    assert fixed.status_code == 200, fixed.text
+    assert fixed.json()["title"] == "First draft"
+    # An omitted key is left alone rather than blanked.
+    assert fixed.json()["kind"] == "file"
+
+    # A blank title is refused rather than silently stored.
+    assert (
+        client.patch(
+            f"/api/v1/courses/{course['id']}/assignments/{assignment['id']}",
+            json={"title": "   "},
+            headers=teacher,
+        ).status_code
+        == 422
+    )
+
+
+def test_closing_stops_submissions_and_archiving_hides_it(client, teacher, student):
+    course, assignment = _course_with_assignment(client, teacher, student)
+    base = f"/api/v1/courses/{course['id']}/assignments/{assignment['id']}"
+
+    closed = client.patch(base, json={"status": "closed"}, headers=teacher)
+    assert closed.status_code == 200 and closed.json()["status"] == "closed"
+
+    refused = client.post(f"{base}/submissions", headers=student)
+    assert refused.status_code == 409
+    assert "closed" in refused.json()["detail"]
+
+    # Closed stays visible to the student: the grade still has to be readable.
+    visible = client.get(
+        f"/api/v1/courses/{course['id']}/assignments", headers=student
+    ).json()
+    assert any(a["id"] == assignment["id"] for a in visible)
+
+    client.patch(base, json={"status": "archived"}, headers=teacher)
+    hidden = client.get(
+        f"/api/v1/courses/{course['id']}/assignments", headers=student
+    ).json()
+    assert not any(a["id"] == assignment["id"] for a in hidden)
+    # The teacher still sees it.
+    kept = client.get(
+        f"/api/v1/courses/{course['id']}/assignments", headers=teacher
+    ).json()
+    assert any(a["id"] == assignment["id"] for a in kept)
+
+
+def test_delete_refuses_to_destroy_submitted_work_without_force(
+    client, teacher, student
+):
+    course, assignment = _course_with_assignment(client, teacher, student)
+    base = f"/api/v1/courses/{course['id']}/assignments/{assignment['id']}"
+    client.post(f"{base}/submissions", headers=student)
+
+    blocked = client.delete(base, headers=teacher)
+    assert blocked.status_code == 409
+    assert "close or archive" in blocked.json()["detail"]
+    # Still there.
+    assert client.get(
+        f"/api/v1/courses/{course['id']}/assignments", headers=teacher
+    ).json()
+
+    gone = client.delete(f"{base}?force=true", headers=teacher)
+    assert gone.status_code == 204
+    assert (
+        client.get(
+            f"/api/v1/courses/{course['id']}/assignments", headers=teacher
+        ).json()
+        == []
+    )
+
+
+def test_assignment_management_is_teacher_only(client, teacher, student):
+    course, assignment = _course_with_assignment(client, teacher, student)
+    base = f"/api/v1/courses/{course['id']}/assignments/{assignment['id']}"
+    assert client.patch(base, json={"title": "Nope"}, headers=student).status_code == 403
+    assert client.delete(base, headers=student).status_code == 403

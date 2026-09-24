@@ -1,11 +1,19 @@
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from .. import schemas
 from ..db import SessionLocal, get_db
 from ..events import dispatch_pending, emit
-from ..models import Assignment, Course, Enrollment, Role, Submission, User
+from ..models import (
+    Assignment,
+    Course,
+    Enrollment,
+    LabTemplate,
+    Role,
+    Submission,
+    User,
+)
 from ..rbac import Principal
 from ..storage import get_storage
 from .deps import get_principal, require_capability
@@ -215,10 +223,93 @@ def list_assignments(
             raise HTTPException(status.HTTP_403_FORBIDDEN, "not enrolled")
     elif principal.role is Role.teacher:
         _require_course_teacher(principal, course)
-    rows = db.scalars(
-        select(Assignment).where(Assignment.course_id == course_id)
-    ).all()
+    query = select(Assignment).where(Assignment.course_id == course_id)
+    if principal.role is Role.student:
+        # Archived means "off the student's course page". Closed stays
+        # visible: they still need to see the grade they were given.
+        query = query.where(Assignment.status != "archived")
+    rows = db.scalars(query).all()
     return [_assignment_out(db, a) for a in rows]
+
+
+def _assignment_or_404(db: Session, course_id: str, assignment_id: str) -> Assignment:
+    assignment = db.get(Assignment, assignment_id)
+    if assignment is None or assignment.course_id != course_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such assignment")
+    return assignment
+
+
+@router.patch(
+    "/{course_id}/assignments/{assignment_id}", response_model=schemas.AssignmentOut
+)
+def update_assignment(
+    course_id: str,
+    assignment_id: str,
+    body: schemas.AssignmentUpdateIn,
+    principal: Principal = Depends(require_capability("courses:write")),
+    db: Session = Depends(get_db),
+):
+    """Edit an assignment, or move it through its lifecycle.
+
+    Until now an assignment was write-once: a typo in the title, a wrong due
+    date, or a lab template pointed at the wrong environment could only be
+    fixed by creating a second assignment and leaving the first in place.
+
+    Only keys actually present in the request body are applied, so
+    ``{"due_at": null}`` clears the due date while omitting the key leaves
+    it alone."""
+    course = _course_or_404(db, course_id)
+    _require_course_teacher(principal, course)
+    assignment = _assignment_or_404(db, course_id, assignment_id)
+
+    changes = body.model_dump(exclude_unset=True)
+    if changes.get("lab_template_id"):
+        if db.get(LabTemplate, changes["lab_template_id"]) is None:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, "no such lab template"
+            )
+    if "title" in changes and not (changes["title"] or "").strip():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "title is required")
+    for field, value in changes.items():
+        setattr(assignment, field, value.strip() if field == "title" else value)
+    db.commit()
+    return _assignment_out(db, assignment)
+
+
+@router.delete("/{course_id}/assignments/{assignment_id}", status_code=204)
+def delete_assignment(
+    course_id: str,
+    assignment_id: str,
+    force: bool = False,
+    principal: Principal = Depends(require_capability("courses:write")),
+    db: Session = Depends(get_db),
+):
+    """Delete an assignment and, with ``force``, the work submitted to it.
+
+    Deleting an assignment that students have already submitted to destroys
+    their grades, so that needs saying out loud rather than happening on a
+    stray click: without ``force`` this refuses and names the count, and the
+    message points at closing instead, which is what a teacher wanting to
+    stop new submissions actually means."""
+    course = _course_or_404(db, course_id)
+    _require_course_teacher(principal, course)
+    assignment = _assignment_or_404(db, course_id, assignment_id)
+
+    submitted = db.scalar(
+        select(func.count(Submission.id)).where(
+            Submission.assignment_id == assignment_id
+        )
+    )
+    if submitted and not force:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{submitted} submission(s) would be destroyed; close or archive "
+            "the assignment to stop new ones, or repeat with force=true",
+        )
+    db.execute(delete(Submission).where(Submission.assignment_id == assignment_id))
+    db.delete(assignment)
+    db.commit()
+    return None
 
 
 @router.post(
@@ -316,9 +407,15 @@ def submit(
     )
     if not enrolled:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "not enrolled")
-    assignment = db.get(Assignment, assignment_id)
-    if assignment is None or assignment.course_id != course_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such assignment")
+    assignment = _assignment_or_404(db, course_id, assignment_id)
+    if assignment.status != "open":
+        # Closing is the teacher's deadline switch, so say which one it is
+        # rather than a bare 409 the student cannot act on.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"this assignment is {assignment.status} and is not accepting "
+            "submissions",
+        )
     existing = db.scalar(
         select(Submission).where(
             Submission.assignment_id == assignment_id,

@@ -1,3 +1,7 @@
+import logging
+import os
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -205,12 +209,75 @@ def upload_iso(
 def list_isos(
     principal: Principal = Depends(require_capability("infra:manage")),
 ):
-    return [
-        schemas.StoredObjectOut(
-            key=obj.key, size=obj.size, last_modified=obj.last_modified
+    """Every ISO an admin can build a template from, across both stores.
+
+    Palestrix keeps its own copy in object storage, but the hypervisor has
+    its own ISO storage that admins fill directly through the Proxmox UI or
+    with ``wget`` on the node — and *that* is the one provisioning attaches.
+    Listing only the object store reported "No ISOs stored" on a cluster
+    holding a dozen images, which is the single most misleading thing this
+    console did.
+
+    The cluster leg is best-effort on purpose: a hypervisor that is down,
+    unreachable, or fronted by an adapter with no ISO support must not blank
+    out the object-store list. When it fails the entries we do have are
+    still returned."""
+    by_key: dict[str, schemas.StoredObjectOut] = {}
+    for obj in get_storage().list("isos"):
+        by_key[os.path.basename(obj.key)] = schemas.StoredObjectOut(
+            key=obj.key,
+            size=obj.size,
+            last_modified=obj.last_modified,
+            source="storage",
         )
-        for obj in get_storage().list("isos")
-    ]
+
+    provider = provider_for_kind("vm")
+    fetch = getattr(provider, "list_isos", None)
+    if callable(fetch):
+        try:
+            for row in fetch():
+                # Proxmox reports a volid ("local:iso/debian.iso"); the
+                # basename is what the two stores agree on.
+                name = os.path.basename(row["key"])
+                held = by_key.get(name)
+                ctime = row.get("ctime")
+                by_key[name] = schemas.StoredObjectOut(
+                    key=row["key"],
+                    size=row["size"] or (held.size if held else 0),
+                    last_modified=(
+                        datetime.fromtimestamp(ctime, tz=timezone.utc)
+                        if ctime
+                        else (held.last_modified if held else None)
+                    ),
+                    source="both" if held else "cluster",
+                )
+        except Exception as exc:  # the object-store list is still useful
+            logging.getLogger("palestrix.admin").warning(
+                "could not list cluster ISO storage: %s", exc
+            )
+
+    return sorted(by_key.values(), key=lambda o: os.path.basename(o.key).lower())
+
+
+@router.get("/vm-templates", response_model=list[schemas.VmTemplateOut])
+def list_vm_templates(
+    principal: Principal = Depends(require_capability("infra:manage")),
+):
+    """The hypervisor's VM templates, so ``vm_template`` on a lab template
+    is chosen from a dropdown rather than typed from memory. Returns an
+    empty list rather than an error when the adapter cannot answer — the
+    editor falls back to a free-text field."""
+    provider = provider_for_kind("vm")
+    fetch = getattr(provider, "list_vm_templates", None)
+    if not callable(fetch):
+        return []
+    try:
+        return [schemas.VmTemplateOut(**row) for row in fetch()]
+    except Exception as exc:
+        logging.getLogger("palestrix.admin").warning(
+            "could not list cluster VM templates: %s", exc
+        )
+        return []
 
 
 @router.get("/providers", response_model=list[schemas.ProviderOut])
