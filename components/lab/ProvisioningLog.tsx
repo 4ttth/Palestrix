@@ -119,7 +119,7 @@ export function ProvisioningLog({
       )}
     >
       {visible.length === 0 ? (
-        <p className="text-muted">
+        <p className={cn("text-muted", !streamError && "plx-breathe")}>
           {streamError
             ? "log stream unavailable; reload to retry"
             : "waiting for orchestration worker..."}
@@ -127,7 +127,10 @@ export function ProvisioningLog({
       ) : (
         <ol>
           {visible.map((line, i) => (
-            <li key={`${line.t}-${i}`} className="flex gap-3">
+            /* Each line fades in as it arrives. Without this the log
+               jumps by a row and the eye has to re-find its place; the
+               entrance is what makes a new line read as new. */
+            <li key={`${line.t}-${i}`} className="plx-fade flex gap-3">
               <span className="shrink-0 text-muted/70">{clockOf(line.t)}</span>
               <span className={levelClass[line.level] ?? "text-muted"}>
                 {line.msg}

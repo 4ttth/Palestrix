@@ -31,6 +31,7 @@ import { AuthorPanel } from "@/components/compete/author-panel";
 import { api, ApiError } from "@/lib/api/client";
 import { useApi } from "@/lib/api/hooks";
 import { useSession } from "@/lib/api/session";
+import { useToast } from "@/components/ui/toast";
 import { ago } from "@/lib/format";
 import type {
   ChallengeOut,
@@ -51,6 +52,7 @@ function pickEvent(events: CtfEventOut[]): CtfEventOut | null {
 
 export function CompeteView() {
   const { user, refreshSummary } = useSession();
+  const toast = useToast();
   const events = useApi<CtfEventOut[]>("/api/v1/compete/events");
   const event = useMemo(
     () => (events.data ? pickEvent(events.data) : null),
@@ -105,14 +107,32 @@ export function CompeteView() {
       );
       setResult(outcome);
       if (outcome.correct) {
+        // First blood is the rarest thing that happens on this page and
+        // used to be a line of 13px text next to the input.
+        toast.success(
+          outcome.first_blood
+            ? `First blood! +${outcome.points} pts`
+            : `Correct — +${outcome.points} pts`,
+          outcome.palestras > 0
+            ? `+${outcome.palestras} Palestras. The board is updated.`
+            : "The board is updated."
+        );
         setFlag("");
         setChallengeId("");
         void challenges.refetch();
         void leaderboard.refetch();
         void refreshSummary();
+      } else {
+        toast.error(
+          "Wrong flag",
+          "A 30-second cooldown is running before you can try again."
+        );
       }
     } catch (err) {
-      setFailure(err instanceof ApiError ? err.message : "Submission failed.");
+      const text =
+        err instanceof ApiError ? err.message : "Submission failed.";
+      setFailure(text);
+      toast.error("Could not submit that flag", text);
     } finally {
       setSubmitting(false);
     }
@@ -209,10 +229,11 @@ export function CompeteView() {
                     {challenges.data && challenges.data.length === 0 && (
                       <Empty title="The board is empty" hint="Challenges appear when the authors publish them." />
                     )}
-                    <div className="grid gap-3 md:grid-cols-2">
-                      {(challenges.data ?? []).map((c) => (
+                    <div className="plx-stagger grid gap-3 md:grid-cols-2">
+                      {(challenges.data ?? []).map((c, ci) => (
                         <div
                           key={c.id}
+                          style={{ ["--plx-index" as string]: ci }}
                           className={
                             "rounded-(--radius-input) border p-4 " +
                             (c.solved
@@ -312,14 +333,14 @@ export function CompeteView() {
                         </p>
                       )}
                       {result && result.correct && (
-                        <p className="text-[13px] font-medium text-running">
+                        <p className="plx-pop text-[13px] font-medium text-running">
                           Correct! +{result.points} pts
                           {result.palestras > 0 && `, +${result.palestras} P`}
                           {result.first_blood && " — first blood!"}
                         </p>
                       )}
                       {result && !result.correct && (
-                        <p className="text-[13px] text-danger">
+                        <p className="plx-shake text-[13px] text-danger">
                           Wrong flag. The 30-second cooldown is now running.
                         </p>
                       )}

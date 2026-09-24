@@ -23,7 +23,7 @@ import { useToast } from "@/components/ui/toast";
 import { api, ApiError } from "@/lib/api/client";
 import { useApi } from "@/lib/api/hooks";
 import { useSession } from "@/lib/api/session";
-import { stateLabel } from "@/lib/labels";
+import { StateBadge } from "@/components/ui/state-badge";
 import type {
   InstanceOut,
   LabTemplateOut,
@@ -198,7 +198,7 @@ export function DashboardView() {
                     {active.host ? ` via ${active.proto} ${active.host}:${active.port}` : ""}
                   </p>
                 </div>
-                <Badge variant={active.state}>{stateLabel[active.state]}</Badge>
+                <StateBadge state={active.state} />
               </div>
               <div className="flex items-center gap-5">
                 {active.expires_at && (

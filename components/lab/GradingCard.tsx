@@ -9,13 +9,14 @@
  * hand-in, never a zero by forfeit.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CheckCircle, Circle, Exam, XCircle } from "@phosphor-icons/react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, ApiError } from "@/lib/api/client";
 import { useApi } from "@/lib/api/hooks";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import type { GradeCheckOut, InstanceGradingOut } from "@/lib/api/types";
 
@@ -31,6 +32,12 @@ export function GradingCard({
   );
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const toast = useToast();
+  // Which rubric keys flipped to passed on the most recent check, so only
+  // those animate. Re-checking an unchanged lab should sit still rather
+  // than replaying the whole card.
+  const [justPassed, setJustPassed] = useState<Set<string>>(new Set());
+  const lastScore = useRef<number | null>(null);
 
   if (!grading.data || grading.data.scheme_kind === null) return null;
   const { scheme_kind, rubric, result } = grading.data;
@@ -38,11 +45,49 @@ export function GradingCard({
   async function submit() {
     setBusy(true);
     setFailure(null);
+    const before = new Set(
+      (result?.items ?? []).filter((i) => i.passed).map((i) => i.key)
+    );
+    const previous = result?.total_percent ?? null;
     try {
-      await api.post<GradeCheckOut>(`/api/v1/instances/${instanceId}/grade`);
+      const check = await api.post<GradeCheckOut>(
+        `/api/v1/instances/${instanceId}/grade`
+      );
       await grading.refetch();
+
+      const gained = check.items
+        .filter((i) => i.passed && !before.has(i.key))
+        .map((i) => i.key);
+      setJustPassed(new Set(gained));
+      lastScore.current = previous;
+
+      // A grade is the whole reason the student pressed the button, so it
+      // says what changed rather than leaving them to diff two lists of
+      // ticks by eye.
+      const delta =
+        previous === null ? null : check.total_percent - previous;
+      if (check.total_percent === 100) {
+        toast.success(
+          "All objectives passed — 100%",
+          "This check is your grade of record."
+        );
+      } else if (gained.length > 0) {
+        toast.success(
+          `${check.total_percent}%${delta ? ` (+${delta})` : ""}`,
+          `${gained.length} more objective${
+            gained.length === 1 ? "" : "s"
+          } passed. Re-check any time before the TTL.`
+        );
+      } else {
+        toast.info(
+          `Still ${check.total_percent}%`,
+          "Nothing new passed on this check. The objectives above show what is outstanding."
+        );
+      }
     } catch (err) {
-      setFailure(err instanceof ApiError ? err.message : "Grading failed.");
+      const text = err instanceof ApiError ? err.message : "Grading failed.";
+      setFailure(text);
+      toast.error("Could not grade this lab", text);
     } finally {
       setBusy(false);
     }
@@ -59,7 +104,13 @@ export function GradingCard({
             Automated grading
           </CardTitle>
           {result && (
-            <Badge variant={result.total_percent === 100 ? "running" : "accent"}>
+            <Badge
+              key={result.total_percent}
+              variant={result.total_percent === 100 ? "running" : "accent"}
+              className={
+                result.total_percent === 100 ? "plx-award" : "plx-pop"
+              }
+            >
               {result.total_percent}%
             </Badge>
           )}
@@ -83,7 +134,14 @@ export function GradingCard({
               >
                 <span className="flex min-w-0 items-center gap-2">
                   {state === true ? (
-                    <CheckCircle size={16} weight="fill" className="shrink-0 text-running" />
+                    <CheckCircle
+                      size={16}
+                      weight="fill"
+                      className={cn(
+                        "shrink-0 text-running",
+                        justPassed.has(item.key) && "plx-pop"
+                      )}
+                    />
                   ) : state === false ? (
                     <XCircle size={16} weight="fill" className="shrink-0 text-expired" />
                   ) : (
@@ -104,14 +162,12 @@ export function GradingCard({
         <Button
           size="sm"
           className="w-full"
-          disabled={!running || busy}
+          disabled={!running}
+          loading={busy}
+          loadingLabel="Checking the live system"
           onClick={() => void submit()}
         >
-          {busy
-            ? "Checking the live system..."
-            : result
-              ? "Re-check my work"
-              : "Submit for grading"}
+          {result ? "Re-check my work" : "Submit for grading"}
         </Button>
         {!running && !result && (
           <p className="text-[12px] text-muted">

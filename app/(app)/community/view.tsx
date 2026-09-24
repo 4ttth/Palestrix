@@ -181,9 +181,13 @@ export function CommunityView() {
                   {voteFailure}
                 </p>
               )}
-              <ul className="divide-y divide-border">
-                {(writeups.data ?? []).map((w) => (
-                  <li key={w.id} className="flex items-center gap-4 py-3.5">
+              <ul className="plx-stagger divide-y divide-border">
+                {(writeups.data ?? []).map((w, wi) => (
+                  <li
+                    key={w.id}
+                    style={{ ["--plx-index" as string]: wi }}
+                    className="flex items-center gap-4 py-3.5"
+                  >
                     <Avatar handle={w.author_handle} size="md" />
                     <div className="min-w-0 flex-1">
                       <Link

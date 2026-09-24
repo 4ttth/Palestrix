@@ -31,7 +31,7 @@ import { api, ApiError } from "@/lib/api/client";
 import { useApi, type Async } from "@/lib/api/hooks";
 import { useSession } from "@/lib/api/session";
 import { bytes, dateOnly } from "@/lib/format";
-import { stateLabel } from "@/lib/labels";
+import { StateBadge } from "@/components/ui/state-badge";
 import { cn } from "@/lib/utils";
 import type {
   CloudOut,
@@ -212,7 +212,7 @@ export function InfrastructureView() {
                           {i.node || "—"}
                         </TableCell>
                         <TableCell>
-                          <Badge variant={i.state}>{stateLabel[i.state]}</Badge>
+                          <StateBadge state={i.state} />
                         </TableCell>
                         <TableCell className="text-right font-mono text-xs tabular-nums">
                           {ALIVE.has(i.state) && i.expires_at ? (

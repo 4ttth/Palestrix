@@ -25,7 +25,7 @@ import { api, ApiError } from "@/lib/api/client";
 import { useApi } from "@/lib/api/hooks";
 import { useSession } from "@/lib/api/session";
 import { clock } from "@/lib/format";
-import { stateLabel } from "@/lib/labels";
+import { StateBadge } from "@/components/ui/state-badge";
 import type { InstanceOut } from "@/lib/api/types";
 
 const EXTEND_COST = 150; // PALESTRIX_INSTANCE_EXTEND_COST_PALESTRAS default
@@ -133,7 +133,7 @@ export function LabView({ instanceId }: { instanceId: string }) {
               <h2 className="text-lg font-semibold tracking-tight">
                 {inst.template_title || inst.template_slug}
               </h2>
-              <Badge variant={inst.state}>{stateLabel[inst.state]}</Badge>
+              <StateBadge state={inst.state} />
             </div>
             <p className="mt-1 font-mono text-xs text-muted">
               {inst.id} | tenant {inst.tenant_id} | node {inst.node || "queue"} |{" "}
@@ -146,6 +146,8 @@ export function LabView({ instanceId }: { instanceId: string }) {
               size="sm"
               title={`Costs ${EXTEND_COST} Palestras`}
               disabled={!running || busy !== null}
+              loading={busy === "extend"}
+              loadingLabel="Extending"
               onClick={() =>
                 act("extend", () =>
                   api.post(`/api/v1/instances/${inst.id}/extend`, { minutes: 30 })
@@ -153,29 +155,33 @@ export function LabView({ instanceId }: { instanceId: string }) {
               }
             >
               <ArrowClockwise size={15} />
-              {busy === "extend" ? "Extending..." : "Extend 30 min"}
+              Extend 30 min
             </Button>
             <Button
               variant="outline"
               size="sm"
               disabled={!running || busy !== null}
+              loading={busy === "stop"}
+              loadingLabel="Stopping"
               onClick={() =>
                 act("stop", () => api.post(`/api/v1/instances/${inst.id}/stop`))
               }
             >
               <Power size={15} />
-              {busy === "stop" ? "Stopping..." : "Stop"}
+              Stop
             </Button>
             <Button
               variant="destructive"
               size="sm"
               disabled={settled || busy !== null}
+              loading={busy === "destroy"}
+              loadingLabel="Destroying"
               onClick={() =>
                 act("destroy", () => api.del(`/api/v1/instances/${inst.id}`))
               }
             >
               <Trash size={15} />
-              {busy === "destroy" ? "Destroying..." : "Destroy"}
+              Destroy
             </Button>
           </div>
         </div>

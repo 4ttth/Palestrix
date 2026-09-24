@@ -418,9 +418,9 @@ function ReportsList({
           />
         )}
         {reports.data && reports.data.length > 0 && (
-          <ul className="divide-y divide-border">
-            {reports.data.map((r) => (
-              <li key={r.id}>
+          <ul className="plx-stagger divide-y divide-border">
+            {reports.data.map((r, ri) => (
+              <li key={r.id} style={{ ["--plx-index" as string]: ri }}>
                 <button
                   type="button"
                   onClick={() => onSelect(r.id)}
