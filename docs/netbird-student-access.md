@@ -1,4 +1,8 @@
-# Student access to labs: a self-hosted NetBird overlay
+# Student access to labs: a NetBird overlay
+
+> **Read the correction below before following any of this.** The
+> self-hosted build this document describes was superseded on
+> 2026-09-24 by a NetBird Cloud membership the site already had.
 
 Layer 2 of [lab-networking.md](lab-networking.md). Layer 1 puts every lab VM on
 an isolated tenant VLAN that routes nowhere — which is the point, and also why
@@ -39,6 +43,64 @@ Measured, not assumed:
 > EC2 to work around it. That premise is wrong for this site: there is a
 > routable public IP and working inbound forwarding, so the relay is
 > unnecessary and self-hosting NetBird here is strictly simpler.
+
+## Correction (2026-09-24): there are three NetBird installs, not two
+
+Everything below this section was written believing the choice was between
+building a server and leaving students stranded. A sweep of both hypervisors
+found a third install that neither this document nor the code knew about, and
+it is the one that already works.
+
+| Where | What it is | State when measured |
+| --- | --- | --- |
+| LXC 117 `reverse-proxy`, `192.168.3.4` (on `pve`, `.5`) | NetBird **client**, enrolled in **NetBird Cloud** (`api.netbird.io`) | Management: Connected. NetBird IP `100.76.142.113/16`. **0 peers, no routed networks.** |
+| VM 104 `netbird-server` (on `pve`, `.5`) | Self-hosted server, snapshot `Working-Netbird-Server` | Running. Not serving anything this platform uses. |
+| VM 203 `netbird-labs`, `192.168.3.30` (on `socproxmoxa`, `.6`) | The self-hosted server this document builds | Running; **not answering on 443**, because the vhost, DNS and UDP forward below were never done. |
+
+So the reverse proxy is already a member of a working overlay. What is missing
+has never been a *server* — it is a **routing peer on the host that owns
+`10.24.0.0/16`**, which is `socproxmoxa`, and which had no NetBird client
+installed at all.
+
+**The plan is now: enrol `socproxmoxa` in the same NetBird Cloud account as
+the reverse proxy and advertise `10.24.0.0/16` from it.** That is one client
+install and one network route. It needs no DNS record, no router forward, no
+vhost, and no self-hosted server — the three things this document was blocked
+on, two of which are off-box and not ours to change.
+
+Measured on `socproxmoxa` the same day, confirming it can do the job:
+
+```
+netbird          -> not installed
+api.netbird.io   -> reachable (HTTP 404 on /, i.e. the connection is fine)
+net.ipv4.ip_forward = 1
+vmbr1.100        -> 10.24.0.1/24   (the lab gateway, on this host)
+```
+
+### What this means for the two self-hosted servers
+
+Neither is load-bearing. Retire them deliberately rather than by neglect:
+
+- **VM 203 `netbird-labs`** was built for this and superseded before it ever
+  served a peer. Nothing references it. Safe to stop and delete once the
+  routing peer is verified.
+- **VM 104 `netbird-server`** predates PalestrIX and is not ours to assume
+  about. Confirm with whoever runs `hausoc.org` before touching it; its
+  snapshot is named `Working-Netbird-Server`, which suggests somebody wanted
+  it kept.
+
+Until the routing peer exists, `PALESTRIX_NETBIRD_*` stays unset, for the
+reason the build commit already gives: an unset modal tells a student the
+truth, and a filled-in one would not.
+
+### Why the sections below are kept
+
+They are an accurate record of what was built on VM 203 and why three of the
+original plan's assumptions did not survive contact — the STUN port not being
+an operator knob, the retired Zitadel quickstart, the relay multiplexed onto
+443. If the site ever has to leave NetBird Cloud, this is the runbook for
+doing it, and the measurements in it were real. Read them as history, not as
+the current path.
 
 ## Before you build: one public IP, two NetBird servers
 
