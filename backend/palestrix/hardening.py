@@ -89,6 +89,12 @@ def production_readiness(settings: Settings) -> list[str]:
             "a different worker than the options request and every passkey is "
             'rejected as "challenge expired or missing" — set it to "redis"'
         )
+    if settings.allow_private_webhooks:
+        findings.append(
+            "PALESTRIX_ALLOW_PRIVATE_WEBHOOKS is on; webhooks:manage is "
+            "granted to every role, so any student's subscription becomes an "
+            "SSRF probe of the lab network and the hypervisor API"
+        )
     if settings.queue_backend == "inline":
         findings.append(
             "PALESTRIX_QUEUE_BACKEND is inline; production provisions through "

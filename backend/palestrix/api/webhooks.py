@@ -8,6 +8,7 @@ from .. import schemas
 from ..db import get_db
 from ..events import EVENT_TYPES
 from ..models import WebhookDelivery, WebhookSubscription
+from ..netguard import UnsafeWebhookTarget, validate_webhook_url
 from ..rbac import Principal
 from .deps import require_capability
 
@@ -26,6 +27,14 @@ def subscribe(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             f"unknown event types: {sorted(unknown)}",
         )
+    # Refuse an unreachable-by-policy target here, where the person can
+    # read the reason. Delivery re-checks the resolved address anyway (DNS
+    # can change under us), but a subscription that could never fire is
+    # worth a 422 rather than a silent stream of failed deliveries.
+    try:
+        validate_webhook_url(body.url)
+    except UnsafeWebhookTarget as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc))
     sub = WebhookSubscription(
         owner_id=principal.user_id,
         url=body.url,

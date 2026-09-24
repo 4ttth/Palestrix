@@ -1,17 +1,71 @@
 """Webhook subscriptions, event fan-out, and HMAC signatures. Deliveries
-are attempted against an unroutable URL, so rows exist and end 'failed'
-without external network dependencies; the signature is verified locally."""
+are attempted against a loopback URL with nothing listening, so rows exist
+and end 'failed' without external network dependencies; the signature is
+verified locally. Reaching loopback at all requires the private-target
+escape hatch, which is what ``private_webhooks`` turns on -- the default
+posture is covered by test_webhook_targets_are_ssrf_guarded."""
 
 import hashlib
 import hmac
 import json
 
+import pytest
 
-def test_subscribe_validate_and_sign(client, student, teacher, student2):
+
+@pytest.fixture()
+def private_webhooks(monkeypatch):
+    """Permit non-public delivery targets for one test.
+
+    The guard resolves the host on every attempt, so a test that wants a
+    real (failing) delivery has to opt in exactly as an operator with an
+    internal collector would.
+    """
+    from palestrix.config import get_settings
+
+    monkeypatch.setenv("PALESTRIX_ALLOW_PRIVATE_WEBHOOKS", "1")
+    get_settings.cache_clear()
+    yield
+    monkeypatch.delenv("PALESTRIX_ALLOW_PRIVATE_WEBHOOKS", raising=False)
+    get_settings.cache_clear()
+
+
+def test_webhook_targets_are_ssrf_guarded(client, student):
+    """A subscription is a URL the platform will fetch on the subscriber's
+    behalf, and webhooks:manage is granted to every role -- so the default
+    refuses everything the internet cannot route to. Without this, any
+    student turns the API into a probe of the lab network, the hypervisor
+    API, and the cloud metadata service."""
+    for url in (
+        "http://127.0.0.1:8080/hook",                 # the API's own host
+        "http://169.254.169.254/latest/meta-data/",   # cloud metadata
+        "http://10.24.7.5/hook",                      # a tenant lab network
+        "http://192.168.3.6:8080/hook",               # the hypervisor's LAN
+        "http://[::1]:8080/hook",                     # loopback over IPv6
+    ):
+        refused = client.post(
+            "/api/v1/webhooks",
+            json={"url": url, "events": ["flag.captured"]},
+            headers=student,
+        )
+        assert refused.status_code == 422, f"{url} was accepted"
+
+    # Ports that are not webhook ports are refused too: without this the
+    # subscription list doubles as a port scanner.
+    odd_port = client.post(
+        "/api/v1/webhooks",
+        json={"url": "https://example.edu:2222/hook", "events": ["flag.captured"]},
+        headers=student,
+    )
+    assert odd_port.status_code == 422
+
+
+def test_subscribe_validate_and_sign(
+    client, student, teacher, student2, private_webhooks
+):
     # Unknown event types are rejected.
     bad = client.post(
         "/api/v1/webhooks",
-        json={"url": "http://127.0.0.1:9/hook", "events": ["nope.event"]},
+        json={"url": "http://127.0.0.1:8080/hook", "events": ["nope.event"]},
         headers=student,
     )
     assert bad.status_code == 422
@@ -19,7 +73,7 @@ def test_subscribe_validate_and_sign(client, student, teacher, student2):
     sub = client.post(
         "/api/v1/webhooks",
         json={
-            "url": "http://127.0.0.1:9/hook",  # port 9: guaranteed refusal
+            "url": "http://127.0.0.1:8080/hook",  # loopback, nothing listening
             "events": ["flag.captured", "palestras.changed"],
         },
         headers=student,

@@ -166,6 +166,15 @@ class Settings(BaseSettings):
     # management URL turns on the "How do I connect?" help the lab page shows
     # beside the endpoint; it is documentation only -- the platform never
     # talks to NetBird, and enrolment is the student's own client.
+    # Webhook delivery targets. Subscriptions are created by ordinary users
+    # (webhooks:manage is granted to every role), so by default the
+    # platform refuses to POST to anything that is not a routable internet
+    # address (palestrix/netguard.py) -- otherwise a student's
+    # subscription is an SSRF primitive against the lab network, the
+    # hypervisor API, and the cloud metadata service. Turn this on only
+    # for a site whose collector really is internal.
+    allow_private_webhooks: bool = False
+
     netbird_management_url: str = ""  # e.g. https://netbird.example.edu
     netbird_network_name: str = ""  # friendly name shown in the UI
     netbird_setup_key_url: str = ""  # where a student gets their setup key
