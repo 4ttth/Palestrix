@@ -1,0 +1,273 @@
+/*
+ * PalestrIX motion layer.
+ *
+ * The platform had a locked colour theme and no motion vocabulary at all:
+ * two files imported `motion/react`, globals.css declared zero keyframes,
+ * and every success and failure in the product landed as a line of text
+ * that appeared with no transition. A student who passed a lab and a
+ * student who failed one saw the same amount of movement: none.
+ *
+ * These are the primitives the rest of the UI composes. Rules that keep it
+ * from becoming noise:
+ *
+ *  - Duration scales with distance travelled, not importance. Nothing here
+ *    runs longer than 520ms except the deliberate celebration.
+ *  - Entrances move at most 8px. Motion that announces itself is motion
+ *    the user has to wait for.
+ *  - Every named animation is listed in the reduced-motion block below,
+ *    which holds the element at its *end* state. The global reduce rule in
+ *    globals.css crushes durations to 0.01ms, which is right for
+ *    transitions but would leave a fill-mode-less animation stuck on its
+ *    first frame — invisible, in the case of anything that fades in.
+ */
+
+@theme inline {
+  --ease-out-soft: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --duration-instant: 120ms;
+  --duration-quick: 180ms;
+  --duration-settle: 260ms;
+  --duration-deliberate: 420ms;
+}
+
+/* -- entrances --------------------------------------------------------------- */
+
+@keyframes plx-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes plx-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Toasts and popovers enter from the edge they are anchored to. */
+@keyframes plx-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes plx-slide-out-right {
+  to {
+    opacity: 0;
+    transform: translateX(16px) scale(0.98);
+  }
+}
+
+/* -- outcomes ---------------------------------------------------------------- */
+
+/* Success: a single overshoot, settling. Reads as "landed", not "bounced". */
+@keyframes plx-pop {
+  0% {
+    transform: scale(0.82);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Failure: lateral, short, decaying. Never red-flashes the whole surface —
+   colour already carries the meaning; this carries the *refusal*. */
+@keyframes plx-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  18% {
+    transform: translateX(-5px);
+  }
+  38% {
+    transform: translateX(4px);
+  }
+  58% {
+    transform: translateX(-3px);
+  }
+  78% {
+    transform: translateX(2px);
+  }
+}
+
+/* The tick on a passed rubric item draws itself rather than appearing. */
+@keyframes plx-draw {
+  from {
+    stroke-dashoffset: var(--plx-draw-length, 24);
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* -- ongoing state ----------------------------------------------------------- */
+
+/* A provisioning lab is doing work nobody can see. This is the only
+   indefinite animation in the system, and it stays under 10% opacity swing
+   so a dashboard of eight of them is not a disco. */
+@keyframes plx-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* Expanding ring behind a live status dot. */
+@keyframes plx-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  80%,
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+/* Skeleton loading sweep. */
+@keyframes plx-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Indeterminate progress for work with no percentage (an image build). */
+@keyframes plx-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(400%);
+  }
+}
+
+/* -- celebration ------------------------------------------------------------- */
+
+/* Earning Palestras is the one moment the product is allowed to be pleased
+   with the student. Amber is the locked gamification colour, so the burst
+   inherits it rather than introducing a hue. */
+@keyframes plx-award {
+  0% {
+    transform: scale(0.6) rotate(-8deg);
+    opacity: 0;
+  }
+  45% {
+    transform: scale(1.18) rotate(3deg);
+    opacity: 1;
+  }
+  70% {
+    transform: scale(0.96) rotate(-1deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes plx-spark {
+  0% {
+    transform: translate(0, 0) scale(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--plx-spark-x, 0), var(--plx-spark-y, 0)) scale(1);
+    opacity: 0;
+  }
+}
+
+/* -- utilities --------------------------------------------------------------- */
+
+.plx-rise {
+  animation: plx-rise var(--duration-settle) var(--ease-out-soft) both;
+}
+
+.plx-fade {
+  animation: plx-fade var(--duration-quick) var(--ease-out-soft) both;
+}
+
+.plx-pop {
+  animation: plx-pop var(--duration-settle) var(--ease-spring) both;
+}
+
+.plx-shake {
+  animation: plx-shake var(--duration-deliberate) var(--ease-out-soft) both;
+}
+
+.plx-breathe {
+  animation: plx-breathe 1.8s ease-in-out infinite;
+}
+
+.plx-award {
+  animation: plx-award var(--duration-deliberate) var(--ease-spring) both;
+}
+
+/* Stagger helper: a list sets --plx-index per row and every row shares one
+   class. Capped at 8 so a 200-row table does not take 10 seconds to appear. */
+.plx-stagger > * {
+  animation: plx-rise var(--duration-settle) var(--ease-out-soft) both;
+  animation-delay: calc(min(var(--plx-index, 0), 8) * 40ms);
+}
+
+.plx-skeleton {
+  background-image: linear-gradient(
+    90deg,
+    var(--surface-2) 0%,
+    color-mix(in oklab, var(--surface-2) 60%, var(--border)) 50%,
+    var(--surface-2) 100%
+  );
+  background-size: 200% 100%;
+  animation: plx-shimmer 1.4s linear infinite;
+}
+
+/*
+ * Reduced motion. The global rule in globals.css sets every duration to
+ * 0.01ms, which is correct for a transition but not for these: an
+ * animation crushed to nothing still has to land on its final frame, and
+ * `both` fill-mode plus an effectively instant run does exactly that. The
+ * indefinite ones are switched off entirely instead of spinning invisibly,
+ * and the two that exist purely to delight are dropped to a plain fade.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .plx-breathe,
+  .plx-skeleton {
+    animation: none;
+  }
+
+  .plx-pop,
+  .plx-award,
+  .plx-shake {
+    animation: plx-fade 0.01ms both;
+  }
+
+  .plx-stagger > * {
+    animation-delay: 0ms;
+  }
+}

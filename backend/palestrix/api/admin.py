@@ -259,27 +259,6 @@ def list_isos(
     return sorted(by_key.values(), key=lambda o: os.path.basename(o.key).lower())
 
 
-@router.get("/vm-templates", response_model=list[schemas.VmTemplateOut])
-def list_vm_templates(
-    principal: Principal = Depends(require_capability("infra:manage")),
-):
-    """The hypervisor's VM templates, so ``vm_template`` on a lab template
-    is chosen from a dropdown rather than typed from memory. Returns an
-    empty list rather than an error when the adapter cannot answer — the
-    editor falls back to a free-text field."""
-    provider = provider_for_kind("vm")
-    fetch = getattr(provider, "list_vm_templates", None)
-    if not callable(fetch):
-        return []
-    try:
-        return [schemas.VmTemplateOut(**row) for row in fetch()]
-    except Exception as exc:
-        logging.getLogger("palestrix.admin").warning(
-            "could not list cluster VM templates: %s", exc
-        )
-        return []
-
-
 @router.get("/providers", response_model=list[schemas.ProviderOut])
 def list_providers(
     principal: Principal = Depends(require_capability("infra:manage")),

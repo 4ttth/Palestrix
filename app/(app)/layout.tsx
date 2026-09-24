@@ -1,5 +1,6 @@
 import { Sidebar } from "@/components/shell/sidebar";
 import { NavProvider } from "@/components/shell/nav-context";
+import { ToastProvider } from "@/components/ui/toast";
 import { SessionProvider } from "@/lib/api/session";
 
 /*
@@ -19,10 +20,12 @@ export default function AppLayout({
   return (
     <SessionProvider>
       <NavProvider>
-        <div className="min-h-[100dvh]">
-          <Sidebar />
-          <div className="lg:pl-56">{children}</div>
-        </div>
+        <ToastProvider>
+          <div className="min-h-[100dvh]">
+            <Sidebar />
+            <div className="lg:pl-56">{children}</div>
+          </div>
+        </ToastProvider>
       </NavProvider>
     </SessionProvider>
   );

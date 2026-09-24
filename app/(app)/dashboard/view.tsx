@@ -19,6 +19,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Countdown } from "@/components/lab/Countdown";
 import { PluginSlot } from "@/components/plugins/PluginSlot";
 import { Empty, LoadFailed, Loading } from "@/components/ui/async";
+import { useToast } from "@/components/ui/toast";
 import { api, ApiError } from "@/lib/api/client";
 import { useApi } from "@/lib/api/hooks";
 import { useSession } from "@/lib/api/session";
@@ -79,6 +80,7 @@ function LaunchPanel() {
   const { data: templates, error, loading, refetch } = useApi<LabTemplateOut[]>(
     "/api/v1/labs/templates"
   );
+  const toast = useToast();
   const [launching, setLaunching] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
 
@@ -89,9 +91,17 @@ function LaunchPanel() {
       const instance = await api.post<InstanceOut>("/api/v1/instances", {
         template_id: template.id,
       });
+      toast.success(
+        `${template.title} is provisioning`,
+        "Taking you to the lab page — the address appears when it is ready."
+      );
       router.push(`/labs/${instance.id}`);
     } catch (err) {
-      setFailure(err instanceof ApiError ? err.message : "Launch failed.");
+      const text = err instanceof ApiError ? err.message : "Launch failed.";
+      setFailure(text);
+      // Quota denials name the quota that blocked; that detail is the
+      // difference between a student waiting and a student asking for help.
+      toast.error(`Could not launch ${template.title}`, text);
       setLaunching(null);
     }
   }

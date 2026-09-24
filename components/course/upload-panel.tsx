@@ -13,14 +13,32 @@
  * course is selected, files a matching "lab" assignment so students see it.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CloudArrowUp, FileArchive, HardDrive } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, ApiError } from "@/lib/api/client";
+import { useApi } from "@/lib/api/hooks";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
-import type { AssignmentOut, CourseOut, LabTemplateOut } from "@/lib/api/types";
+import type {
+  AssignmentOut,
+  CourseOut,
+  LabTemplateOut,
+  VmTemplateOut,
+} from "@/lib/api/types";
+
+/* "Blue Team: Log Triage Under Fire" -> "blue-team-log-triage-under-fire".
+ * The slug field required name:version typed by hand and rejected the
+ * form on a regex most teachers met only by failing it. */
+function slugify(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
 
 export function UploadPanel({
   course,
@@ -39,7 +57,21 @@ export function UploadPanel({
   const [file, setFile] = useState<File | null>(null);
   const [archive, setArchive] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const [slugTouched, setSlugTouched] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const toast = useToast();
+  // Only asked for once the teacher is actually publishing a VM lab.
+  const vmTemplates = useApi<VmTemplateOut[]>(
+    advanced && envKind === "vm" ? "/api/v1/labs/vm-templates" : null
+  );
+  const vmOptions = vmTemplates.data ?? [];
+
+  // Keep the slug tracking the title until the teacher edits it by hand.
+  useEffect(() => {
+    if (slugTouched) return;
+    const base = slugify(title);
+    setSlug(base ? `${base}:1.0` : "");
+  }, [title, slugTouched]);
 
   async function publish() {
     setNotice(null);
@@ -62,7 +94,10 @@ export function UploadPanel({
           `/api/v1/courses/${course.id}/assignments/${assignment.id}/attachment`,
           form
         );
-        setNotice({ ok: true, text: `Assignment "${title.trim()}" published.` });
+        toast.success(
+          `"${title.trim()}" published`,
+          `${file.name} attached. Students in ${course.code} can see it now.`
+        );
       } else {
         if (!/^[a-z0-9-]+:[0-9.]+$/.test(slug)) {
           throw new ApiError(0, 'Slug must look like "name:version", e.g. log-triage:1.4.');
@@ -94,21 +129,27 @@ export function UploadPanel({
             lab_template_id: template.id,
           });
         }
-        setNotice({
-          ok: true,
-          text: `Environment ${template.slug} published${course ? " and assigned" : ""}.`,
-        });
+        toast.success(
+          `${template.title} published`,
+          course
+            ? `Published as ${template.slug} and assigned to ${course.code}.`
+            : `Published as ${template.slug}. Assign it from any course.`
+        );
       }
       setTitle("");
       setSlug("");
+      setSlugTouched(false);
       setFile(null);
       setArchive(null);
       onPublished?.();
     } catch (err) {
-      setNotice({
-        ok: false,
-        text: err instanceof ApiError ? err.message : "Publishing failed.",
-      });
+      const text =
+        err instanceof ApiError ? err.message : "Publishing failed.";
+      setNotice({ ok: false, text });
+      toast.error(
+        advanced ? "Could not publish that environment" : "Could not publish that assignment",
+        text
+      );
     } finally {
       setBusy(false);
     }
@@ -197,12 +238,17 @@ export function UploadPanel({
               <Input
                 id="env-slug"
                 value={slug}
-                onChange={(e) => setSlug(e.target.value)}
+                onChange={(e) => {
+                  setSlugTouched(true);
+                  setSlug(e.target.value);
+                }}
                 placeholder="log-triage:1.4"
                 className="font-mono"
               />
               <p className="text-[13px] text-muted">
-                name:version — how launches and the registry refer to it.
+                Filled in from the title; edit it if you want a different
+                name or version. Bump the version to publish a revision
+                without disturbing labs already running.
               </p>
             </div>
 
@@ -254,17 +300,45 @@ export function UploadPanel({
 
             {envKind === "vm" && (
               <div className="grid gap-2">
-                <Label htmlFor="vm-template">Proxmox template name</Label>
-                <Input
-                  id="vm-template"
-                  value={vmTemplate}
-                  onChange={(e) => setVmTemplate(e.target.value)}
-                  placeholder="debian12-min"
-                  className="font-mono"
-                />
+                <Label htmlFor="vm-template">Base template</Label>
+                {/* Read from the hypervisor rather than typed from memory:
+                    a mistyped name used to pass validation here and fail
+                    minutes later, during provisioning, on a student's
+                    screen. Free text stays available as the fallback when
+                    the cluster cannot be reached. */}
+                {vmOptions.length > 0 ? (
+                  <select
+                    id="vm-template"
+                    value={vmTemplate}
+                    onChange={(e) => setVmTemplate(e.target.value)}
+                    className="h-10 rounded-(--radius-input) border border-border bg-surface px-3 font-mono text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  >
+                    <option value="">Choose a template…</option>
+                    {vmOptions.map((t) => (
+                      <option key={t.vmid} value={t.name}>
+                        {t.name}
+                        {t.ram_mb > 0 &&
+                          ` — ${t.cpu} vCPU, ${Math.round(t.ram_mb / 1024)} GB`}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <Input
+                    id="vm-template"
+                    value={vmTemplate}
+                    onChange={(e) => setVmTemplate(e.target.value)}
+                    placeholder="debian12-min"
+                    className="font-mono"
+                  />
+                )}
                 <p className="text-[13px] text-muted">
-                  As it appears in the Proxmox datacenter. Ask an administrator
-                  to build one from the ISO library.
+                  {vmTemplates.loading
+                    ? "Reading templates from the hypervisor…"
+                    : vmOptions.length > 0
+                      ? `${vmOptions.length} template${
+                          vmOptions.length === 1 ? "" : "s"
+                        } on the cluster. Each launch clones the one you pick.`
+                      : "No templates readable from the hypervisor — type the name as it appears in Proxmox, or ask an administrator to build one from the ISO library."}
                 </p>
               </div>
             )}
@@ -346,12 +420,13 @@ export function UploadPanel({
         </div>
 
         <div className="flex justify-end gap-3">
-          <Button size="sm" onClick={publish} disabled={busy}>
-            {busy
-              ? "Publishing..."
-              : advanced
-                ? "Publish environment"
-                : "Attach file"}
+          <Button
+            size="sm"
+            onClick={publish}
+            loading={busy}
+            loadingLabel="Publishing"
+          >
+            {advanced ? "Publish environment" : "Attach file"}
           </Button>
         </div>
       </div>

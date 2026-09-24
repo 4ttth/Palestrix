@@ -14,6 +14,7 @@ import { Cpu, HardDrives, Plugs, UploadSimple } from "@phosphor-icons/react";
 import { Topbar } from "@/components/shell/topbar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Countdown } from "@/components/lab/Countdown";
 import {
@@ -47,6 +48,7 @@ export function InfrastructureView() {
   const { user } = useSession();
   const providers = useApi<ProviderOut[]>("/api/v1/admin/providers");
   const registry = useApi<InstanceOut[]>("/api/v1/instances?all_tenants=true");
+  const toast = useToast();
   const isos = useApi<StoredObjectOut[]>("/api/v1/admin/isos");
   const tenants = useApi<TenantOut[]>("/api/v1/admin/tenants");
   const cloud = useApi<CloudOut>("/api/v1/admin/cloud");
@@ -89,16 +91,27 @@ export function InfrastructureView() {
         forwarded_to: string | null;
         forward_error?: string;
       }>("/api/v1/admin/isos", form);
-      setNotice(
-        result.forward_error
-          ? `Stored ${file.name}, but cluster forwarding failed: ${result.forward_error}`
-          : result.forwarded_to
-            ? `Stored ${file.name} and forwarded it to cluster storage (${result.forwarded_to}).`
-            : `Stored ${file.name}.`
-      );
+      if (result.forward_error) {
+        // The upload succeeded and the cluster copy did not: that is a
+        // warning, not a success, because only the cluster copy boots.
+        toast.error(
+          `${file.name} stored, but not on the cluster`,
+          `Palestrix kept its copy. The hypervisor refused: ${result.forward_error}`
+        );
+      } else {
+        toast.success(
+          `${file.name} uploaded`,
+          result.forwarded_to
+            ? `Now on the cluster as ${result.forwarded_to} — ready to build a template from.`
+            : "Stored in object storage."
+        );
+      }
       void isos.refetch();
     } catch (err) {
-      setNotice(err instanceof ApiError ? err.message : "ISO upload failed.");
+      const text =
+        err instanceof ApiError ? err.message : "ISO upload failed.";
+      setNotice(text);
+      toast.error(`Could not upload ${file.name}`, text);
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -251,18 +264,38 @@ export function InfrastructureView() {
                 {isos.error && <LoadFailed error={isos.error} retry={isos.refetch} />}
                 {isos.data && isos.data.length === 0 && (
                   <Empty
-                    title="No ISOs stored"
-                    hint="Upload installers here for admins to build VM templates from."
+                    title="No ISOs anywhere"
+                    hint="Nothing in Palestrix's object storage, and nothing readable on the hypervisor's ISO storage. Upload an installer here, or drop one on the cluster and it will appear."
                   />
                 )}
-                <ul className="divide-y divide-border">
-                  {(isos.data ?? []).map((iso) => (
-                    <li key={iso.key} className="py-2.5">
-                      <p className="truncate font-mono text-[13px]">{iso.key}</p>
-                      <p className="mt-0.5 font-mono text-[11px] text-muted">
-                        {bytes(iso.size)}
-                        {iso.last_modified && ` | ${dateOnly(iso.last_modified)}`}
-                      </p>
+                <ul className="plx-stagger divide-y divide-border">
+                  {(isos.data ?? []).map((iso, i) => (
+                    <li
+                      key={iso.key}
+                      style={{ ["--plx-index" as string]: i }}
+                      className="flex items-start justify-between gap-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-mono text-[13px]">
+                          {iso.key}
+                        </p>
+                        <p className="mt-0.5 font-mono text-[11px] text-muted">
+                          {bytes(iso.size)}
+                          {iso.last_modified && ` | ${dateOnly(iso.last_modified)}`}
+                        </p>
+                      </div>
+                      {/* Only the cluster's copy can be attached to a VM, so
+                          where an image lives is the operative fact, not a
+                          detail. */}
+                      <Badge
+                        variant={iso.source === "storage" ? "neutral" : "running"}
+                      >
+                        {iso.source === "both"
+                          ? "Cluster + storage"
+                          : iso.source === "cluster"
+                            ? "On cluster"
+                            : "Storage only"}
+                      </Badge>
                     </li>
                   ))}
                 </ul>

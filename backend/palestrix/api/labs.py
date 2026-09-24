@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -5,7 +7,7 @@ from sqlalchemy.orm import Session
 from .. import schemas
 from ..db import get_db
 from ..models import LabTemplate
-from ..providers import known_kinds
+from ..providers import known_kinds, provider_for_kind
 from ..rbac import Principal
 from ..storage import get_storage
 from .deps import get_principal, require_capability
@@ -18,6 +20,37 @@ def list_templates(
     principal: Principal = Depends(get_principal), db: Session = Depends(get_db)
 ):
     return db.scalars(select(LabTemplate)).all()
+
+
+@router.get("/vm-templates", response_model=list[schemas.VmTemplateOut])
+def list_vm_templates(
+    principal: Principal = Depends(require_capability("courses:write")),
+):
+    """The hypervisor's bootable VM templates, for the publisher's picker.
+
+    Declared above ``/templates/{...}``-shaped routes for the same reason
+    ``/instances/access`` is: FastAPI matches in declaration order.
+
+    Publishing a VM lab means naming a ``vm_template``, which was a
+    free-text box whose correct values lived only in a runbook — a typo
+    surfaced minutes later as a provisioning failure on a student's screen.
+    Gated on ``courses:write`` rather than ``infra:manage`` because the
+    teacher publishing the lab is the one who needs it, and the names are
+    not sensitive: the same caller may already reference them.
+
+    Returns an empty list rather than an error when the adapter cannot
+    answer, so the UI falls back to free text instead of blocking."""
+    provider = provider_for_kind("vm")
+    fetch = getattr(provider, "list_vm_templates", None)
+    if not callable(fetch):
+        return []
+    try:
+        return [schemas.VmTemplateOut(**row) for row in fetch()]
+    except Exception as exc:
+        logging.getLogger("palestrix.labs").warning(
+            "could not list cluster VM templates: %s", exc
+        )
+        return []
 
 
 @router.post("/templates", response_model=schemas.LabTemplateOut, status_code=201)

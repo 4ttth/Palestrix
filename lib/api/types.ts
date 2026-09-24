@@ -67,14 +67,21 @@ export type CourseOut = {
   assignments: number;
 };
 
+export type AssignmentKind = "file" | "quiz" | "lab" | "writeup";
+
+/** open accepts submissions; closed keeps it visible but refuses new ones;
+ * archived also drops it off the student's course page. */
+export type AssignmentStatus = "open" | "closed" | "archived";
+
 export type AssignmentOut = {
   id: string;
   course_id: string;
   title: string;
-  kind: "file" | "quiz" | "lab" | "writeup";
+  kind: AssignmentKind;
   due_at: string | null;
   lab_template_id: string | null;
   storage_key: string | null;
+  status: AssignmentStatus;
   submissions: number;
   graded: number;
 };
@@ -309,6 +316,17 @@ export type StoredObjectOut = {
   key: string;
   size: number;
   last_modified: string | null;
+  /** Which store holds it: Palestrix's object storage, the hypervisor's
+   * ISO storage (what provisioning can actually attach), or both. */
+  source: "storage" | "cluster" | "both";
+};
+
+/** GET /admin/vm-templates — the hypervisor's own bootable templates. */
+export type VmTemplateOut = {
+  name: string;
+  vmid: number;
+  cpu: number;
+  ram_mb: number;
 };
 
 export type ProviderOut = {

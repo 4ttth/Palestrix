@@ -23,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { UploadPanel } from "@/components/course/upload-panel";
+import { AssignmentManager } from "@/components/course/assignment-manager";
 import { AutogradePanel } from "@/components/course/autograde-panel";
 import { CanvasPanel } from "@/components/course/canvas-panel";
 import { Gradebook } from "@/components/course/gradebook";
@@ -33,7 +34,7 @@ import { useApi } from "@/lib/api/hooks";
 import { useSession } from "@/lib/api/session";
 import { dateOnly } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { AssignmentOut, CourseOut } from "@/lib/api/types";
+import type { AssignmentOut, CourseOut, LabTemplateOut } from "@/lib/api/types";
 
 const KIND_LABEL: Record<AssignmentOut["kind"], string> = {
   file: "File",
@@ -109,6 +110,7 @@ function NewCourseForm({ onCreated }: { onCreated: () => void }) {
 
 export function CoursesView() {
   const { user } = useSession();
+  const isTeacher = user.role === "teacher" || user.role === "superadmin";
   const courses = useApi<CourseOut[]>("/api/v1/courses");
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -117,11 +119,14 @@ export function CoursesView() {
     return rows.find((c) => c.id === selectedId) ?? rows[0] ?? null;
   }, [courses.data, selectedId]);
 
+  // The lab-template list feeds the "Live lab" picker when editing an
+  // assignment; only a teacher ever opens that editor.
+  const labTemplates = useApi<LabTemplateOut[]>(
+    isTeacher ? "/api/v1/labs/templates" : null
+  );
   const assignments = useApi<AssignmentOut[]>(
     selected ? `/api/v1/courses/${selected.id}/assignments` : null
   );
-
-  const isTeacher = user.role === "teacher" || user.role === "superadmin";
 
   return (
     <>
@@ -213,17 +218,27 @@ export function CoursesView() {
                 {assignments.error && (
                   <LoadFailed error={assignments.error} retry={assignments.refetch} />
                 )}
-                {assignments.data && assignments.data.length === 0 && (
+                {assignments.data && assignments.data.length === 0 && !isTeacher && (
                   <Empty
                     title="No assignments yet"
-                    hint={
-                      isTeacher
-                        ? "Publish one from the panel on the right."
-                        : "Your teacher hasn't posted anything for this course."
-                    }
+                    hint="Your teacher hasn't posted anything for this course."
                   />
                 )}
-                {assignments.data && assignments.data.length > 0 && (
+                {/* Teachers get the management surface; students get the
+                    read-only table, since none of these controls are
+                    theirs and an archived row never reaches them anyway. */}
+                {assignments.data && isTeacher && (
+                  <AssignmentManager
+                    courseId={selected.id}
+                    assignments={assignments.data}
+                    templates={labTemplates.data ?? []}
+                    onChanged={() => {
+                      void assignments.refetch();
+                      void courses.refetch();
+                    }}
+                  />
+                )}
+                {assignments.data && !isTeacher && assignments.data.length > 0 && (
                   <Table>
                     <TableHeader>
                       <TableRow>

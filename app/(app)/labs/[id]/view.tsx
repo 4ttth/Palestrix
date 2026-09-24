@@ -20,6 +20,7 @@ import { GradingCard } from "@/components/lab/GradingCard";
 import { ProvisioningLog } from "@/components/lab/ProvisioningLog";
 import { ConnectHelp } from "@/components/lab/ConnectHelp";
 import { Empty, LoadFailed, Loading } from "@/components/ui/async";
+import { useToast } from "@/components/ui/toast";
 import { api, ApiError } from "@/lib/api/client";
 import { useApi } from "@/lib/api/hooks";
 import { useSession } from "@/lib/api/session";
@@ -29,8 +30,33 @@ import type { InstanceOut } from "@/lib/api/types";
 
 const EXTEND_COST = 150; // PALESTRIX_INSTANCE_EXTEND_COST_PALESTRAS default
 
+/* Outcome copy for the three lab controls. Spelled out per action rather
+ * than interpolated from the verb, because "destroy succeeded" is not a
+ * sentence anyone wants to read about their own work. */
+const DONE: Record<string, { title: string; detail: string }> = {
+  extend: {
+    title: "Extended by 30 minutes",
+    detail: `${EXTEND_COST} Palestras spent. The countdown is updated.`,
+  },
+  stop: {
+    title: "Lab stopped",
+    detail: "The machine is powered off and its address is released.",
+  },
+  destroy: {
+    title: "Lab destroyed",
+    detail: "Launch it again for a fresh machine and a new address.",
+  },
+};
+
+const FAILED: Record<string, string> = {
+  extend: "Could not extend this lab",
+  stop: "Could not stop this lab",
+  destroy: "Could not destroy this lab",
+};
+
 export function LabView({ instanceId }: { instanceId: string }) {
   const { refreshSummary } = useSession();
+  const toast = useToast();
   const instance = useApi<InstanceOut>(`/api/v1/instances/${instanceId}`);
   const [busy, setBusy] = useState<"extend" | "stop" | "destroy" | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
@@ -46,8 +72,11 @@ export function LabView({ instanceId }: { instanceId: string }) {
       await run();
       await instance.refetch();
       void refreshSummary(); // extend spends Palestras
+      toast.success(DONE[kind].title, DONE[kind].detail);
     } catch (err) {
-      setFailure(err instanceof ApiError ? err.message : `${kind} failed.`);
+      const text = err instanceof ApiError ? err.message : `${kind} failed.`;
+      setFailure(text);
+      toast.error(FAILED[kind], text);
     } finally {
       setBusy(null);
     }

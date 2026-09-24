@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "../components/theme/tokens.css";
+@import "../components/theme/motion.css";
 
 body {
   background-color: var(--background);

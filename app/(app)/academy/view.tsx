@@ -21,6 +21,7 @@ import { api, ApiError } from "@/lib/api/client";
 import { useApi } from "@/lib/api/hooks";
 import { useSession } from "@/lib/api/session";
 import { Markdown } from "@/components/ui/markdown";
+import { useToast } from "@/components/ui/toast";
 import type { ModuleDetailOut, ModuleOut, PathOut } from "@/lib/api/types";
 
 type ModuleState = "done" | "current" | "locked";
@@ -47,6 +48,7 @@ type PathWithModules = { path: PathOut; modules: ModuleOut[] };
 
 export function AcademyView() {
   const { refreshSummary } = useSession();
+  const toast = useToast();
   const paths = useApi<PathOut[]>("/api/v1/academy/paths");
   const [byPath, setByPath] = useState<PathWithModules[] | null>(null);
   const [reading, setReading] = useState<ModuleDetailOut | null>(null);
@@ -100,9 +102,10 @@ export function AcademyView() {
       );
     } catch (err) {
       setReadingId(null);
-      setFailure(
-        err instanceof ApiError ? err.message : "Could not open that module."
-      );
+      const text =
+        err instanceof ApiError ? err.message : "Could not open that module.";
+      setFailure(text);
+      toast.error("Could not open that module", text);
     }
   }
 
@@ -110,7 +113,20 @@ export function AcademyView() {
     setCompleting(moduleId);
     setFailure(null);
     try {
-      await api.post(`/api/v1/academy/modules/${moduleId}/complete`);
+      const result = await api.post<{
+        completed: boolean;
+        palestras_awarded: number;
+      }>(`/api/v1/academy/modules/${moduleId}/complete`);
+      // The award is the whole point of finishing a module, and it used to
+      // land as a silently-updated number in the topbar.
+      toast.success(
+        result.palestras_awarded > 0
+          ? `+${result.palestras_awarded} Palestras`
+          : "Module complete",
+        result.palestras_awarded > 0
+          ? "Module complete. Your balance is updated."
+          : "Already credited — no Palestras this time."
+      );
       // Refresh this path's modules and the topbar balance.
       if (active) {
         const fresh = await api.get<ModuleOut[]>(
@@ -124,7 +140,10 @@ export function AcademyView() {
       }
       void refreshSummary();
     } catch (err) {
-      setFailure(err instanceof ApiError ? err.message : "Completion failed.");
+      const text =
+        err instanceof ApiError ? err.message : "Completion failed.";
+      setFailure(text);
+      toast.error("Could not complete that module", text);
     } finally {
       setCompleting(null);
     }
