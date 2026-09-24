@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import schemas
+from ..config import get_settings
 from ..db import SessionLocal, get_db
 from ..events import dispatch_pending
 from ..models import ACTIVE_STATES, Instance, LabTemplate, Tenant, User
@@ -257,6 +258,131 @@ def list_isos(
             )
 
     return sorted(by_key.values(), key=lambda o: os.path.basename(o.key).lower())
+
+
+@router.get("/netbird", response_model=schemas.NetBirdStatusOut)
+def netbird_status(
+    principal: Principal = Depends(require_capability("infra:manage")),
+):
+    """The overlay console: peer roster, how full the plan is, and which
+    slots a reap could free.
+
+    Read-only and best-effort. With no API token the overlay still runs —
+    students join and native inactivity expiration reaps offline peers an hour
+    later — so this reports ``configured: False`` rather than erroring, and the
+    UI explains that the live view needs a token. A NetBird-side failure comes
+    back in ``error`` so the console says why it is blank."""
+    settings = get_settings()
+    base = schemas.NetBirdStatusOut(
+        configured=bool(settings.netbird_api_token),
+        management_url=settings.netbird_management_url.rstrip("/"),
+        network_name=settings.netbird_network_name,
+        peer_limit=settings.netbird_peer_limit,
+    )
+    if not settings.netbird_api_token:
+        return base
+
+    from ..integrations.netbird import NetBirdClient, NetBirdError, classify, reapable
+
+    try:
+        client = NetBirdClient(settings.netbird_api_url, settings.netbird_api_token)
+        try:
+            raw = client.peers()
+        finally:
+            client.close()
+    except NetBirdError as exc:
+        base.error = str(exc)
+        return base
+
+    infos = [classify(p) for p in raw]
+    base.peers = [schemas.NetBirdPeerOut(**i) for i in infos]
+    base.total = len(infos)
+    base.connected = sum(1 for i in infos if i["connected"])
+    base.students = sum(1 for i in infos if i["is_student"])
+    base.reapable = len(reapable(raw))
+    return base
+
+
+@router.post("/netbird/reap", response_model=schemas.NetBirdReapOut)
+def netbird_reap(
+    principal: Principal = Depends(require_capability("infra:manage")),
+):
+    """Free every offline student slot now, rather than waiting out the
+    inactivity hour. Connected students are spared, and the router and admin
+    devices are never candidates — the reap only ever sees the ``students``
+    group, minus anything protected."""
+    settings = get_settings()
+    if not settings.netbird_api_token:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "no NetBird API token configured; set PALESTRIX_NETBIRD_API_TOKEN",
+        )
+
+    from ..integrations.netbird import (
+        NetBirdClient,
+        NetBirdError,
+        classify,
+        reapable,
+    )
+
+    out = schemas.NetBirdReapOut()
+    try:
+        client = NetBirdClient(settings.netbird_api_url, settings.netbird_api_token)
+    except NetBirdError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc))
+    try:
+        raw = client.peers()
+        out.kept = sum(
+            1 for p in raw if classify(p)["is_student"] and p.get("connected")
+        )
+        for target in reapable(raw):
+            try:
+                client.delete_peer(target["id"])
+                out.reaped.append(target["name"])
+            except NetBirdError as exc:
+                out.errors.append(f"{target['name']}: {exc}")
+    except NetBirdError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc))
+    finally:
+        client.close()
+    return out
+
+
+@router.delete("/netbird/peers/{peer_id}", status_code=204)
+def netbird_delete_peer(
+    peer_id: str,
+    principal: Principal = Depends(require_capability("infra:manage")),
+):
+    """Remove one peer by hand. Refuses a protected peer (the router or an
+    admin device) so a stray click cannot cut the path to every lab."""
+    settings = get_settings()
+    if not settings.netbird_api_token:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "no NetBird API token configured"
+        )
+
+    from ..integrations.netbird import NetBirdClient, NetBirdError, classify
+
+    try:
+        client = NetBirdClient(settings.netbird_api_url, settings.netbird_api_token)
+    except NetBirdError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc))
+    try:
+        match = next((p for p in client.peers() if p.get("id") == peer_id), None)
+        if match is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "no such peer")
+        if classify(match)["is_protected"]:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "that peer is the lab router or an admin device and cannot be "
+                "reaped from here",
+            )
+        client.delete_peer(peer_id)
+    except NetBirdError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc))
+    finally:
+        client.close()
+    return None
 
 
 @router.get("/providers", response_model=list[schemas.ProviderOut])

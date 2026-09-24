@@ -186,12 +186,23 @@ def remote_access(principal: Principal = Depends(get_principal)):
     """
     settings = get_settings()
     url = settings.netbird_management_url.rstrip("/")
+    key = settings.netbird_setup_key.strip()
+    # One shared reusable key for the whole cohort, so the modal can render a
+    # single runnable command rather than sending the student off for a key.
+    # Only built when both the URL and the key are set.
+    join_command = (
+        f"netbird up --management-url {url} --setup-key {key}"
+        if url and key
+        else ""
+    )
     return schemas.RemoteAccessOut(
         configured=bool(url),
         management_url=url,
         network_name=settings.netbird_network_name,
         setup_key_url=settings.netbird_setup_key_url.rstrip("/"),
         docs_url=settings.netbird_docs_url,
+        setup_key=key,
+        join_command=join_command,
     )
 
 

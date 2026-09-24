@@ -17,7 +17,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { Question, X } from "@phosphor-icons/react";
+import { Check, Copy, Question, X } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
 import { useApi } from "@/lib/api/hooks";
 import type { RemoteAccessOut } from "@/lib/api/types";
@@ -44,6 +44,42 @@ function Code({ children }: { children: React.ReactNode }) {
     <code className="block overflow-x-auto rounded-md bg-surface-2 px-3 py-2 font-mono text-[12px] text-foreground">
       {children}
     </code>
+  );
+}
+
+/* The one join command, with a copy button — this is the single step a
+ * student actually has to perform, so it earns one-click copy and a
+ * confirmation that the click landed. */
+function CopyCode({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // Clipboard blocked (insecure context / permissions): the text is
+      // still selectable, so this is a convenience, not the only way.
+    }
+  }
+  return (
+    <div className="flex items-stretch gap-2">
+      <code className="block flex-1 overflow-x-auto rounded-md bg-surface-2 px-3 py-2 font-mono text-[12px] text-foreground">
+        {text}
+      </code>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label={copied ? "Copied" : "Copy command"}
+        className="shrink-0 rounded-md border border-border px-2.5 text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+      >
+        {copied ? (
+          <Check className="size-4 text-running plx-pop" aria-hidden />
+        ) : (
+          <Copy className="size-4" aria-hidden />
+        )}
+      </button>
+    </div>
   );
 }
 
@@ -128,22 +164,36 @@ export function ConnectHelp({ endpoint }: { endpoint: string | null }) {
                 )}
               </Step>
 
-              <Step n={2} title="Point it at this school's network">
-                <p>Sign in against our own NetBird, not the public service:</p>
-                <Code>netbird up --management-url {info.management_url}</Code>
-                {info.setup_key_url && (
-                  <p>
-                    Need a setup key?{" "}
-                    <a
-                      href={info.setup_key_url}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      className="text-accent underline underline-offset-2"
-                    >
-                      Get one here
-                    </a>
-                    , then add <code className="font-mono">--setup-key &lt;key&gt;</code>.
-                  </p>
+              <Step n={2} title="Join this school's network">
+                {info.join_command ? (
+                  <>
+                    <p>
+                      Run this once. It signs you in against our own NetBird
+                      with the class join key — no account of your own to set
+                      up:
+                    </p>
+                    <CopyCode text={info.join_command} />
+                  </>
+                ) : (
+                  <>
+                    <p>Sign in against our own NetBird, not the public service:</p>
+                    <Code>netbird up --management-url {info.management_url}</Code>
+                    {info.setup_key_url && (
+                      <p>
+                        Need a setup key?{" "}
+                        <a
+                          href={info.setup_key_url}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          className="text-accent underline underline-offset-2"
+                        >
+                          Get one here
+                        </a>
+                        , then add{" "}
+                        <code className="font-mono">--setup-key &lt;key&gt;</code>.
+                      </p>
+                    )}
+                  </>
                 )}
               </Step>
 

@@ -139,6 +139,42 @@ export type RemoteAccessOut = {
   network_name: string;
   setup_key_url: string;
   docs_url: string;
+  /** The shared reusable join key and a ready-to-run command, present only
+   * when the deployment configured a key (this one shares one key for the
+   * whole cohort rather than a NetBird user per student). */
+  setup_key: string;
+  join_command: string;
+};
+
+export type NetBirdPeerOut = {
+  id: string;
+  name: string;
+  ip: string;
+  connected: boolean;
+  last_seen: string | null;
+  os: string;
+  groups: string[];
+  is_student: boolean;
+  is_protected: boolean;
+};
+
+export type NetBirdStatusOut = {
+  configured: boolean;
+  management_url: string;
+  network_name: string;
+  peer_limit: number;
+  total: number;
+  connected: number;
+  students: number;
+  reapable: number;
+  peers: NetBirdPeerOut[];
+  error: string | null;
+};
+
+export type NetBirdReapOut = {
+  reaped: string[];
+  kept: number;
+  errors: string[];
 };
 
 

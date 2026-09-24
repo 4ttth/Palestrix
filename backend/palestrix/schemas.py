@@ -575,6 +575,50 @@ class RemoteAccessOut(BaseModel):
     network_name: str = ""
     setup_key_url: str = ""
     docs_url: str = ""
+    # The shared join key and a ready-to-run command, present only when the
+    # deployment configured a key. The modal renders the command as one
+    # copy-paste step instead of sending the student to the NetBird console
+    # for a key of their own — this deployment shares one.
+    setup_key: str = ""
+    join_command: str = ""
+
+
+class NetBirdPeerOut(BaseModel):
+    id: str
+    name: str
+    ip: str = ""
+    connected: bool
+    last_seen: datetime | None = None
+    os: str = ""
+    groups: list[str] = []
+    is_student: bool = False
+    is_protected: bool = False
+
+
+class NetBirdStatusOut(BaseModel):
+    """The superadmin overlay console: is NetBird wired, and how full is it.
+
+    ``configured`` is False when no API token is set — the overlay still works
+    (native reaping does not need this token), but the live view and the manual
+    reap are off. ``error`` carries a NetBird-side failure so the console shows
+    why it is blank instead of an empty list."""
+
+    configured: bool
+    management_url: str = ""
+    network_name: str = ""
+    peer_limit: int = 0
+    total: int = 0
+    connected: int = 0
+    students: int = 0
+    reapable: int = 0
+    peers: list[NetBirdPeerOut] = []
+    error: str | None = None
+
+
+class NetBirdReapOut(BaseModel):
+    reaped: list[str] = []  # peer names removed
+    kept: int = 0  # student peers still online, deliberately spared
+    errors: list[str] = []
 
 
 class SandboxStatusOut(BaseModel):

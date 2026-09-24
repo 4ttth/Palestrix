@@ -179,6 +179,24 @@ class Settings(BaseSettings):
     netbird_network_name: str = ""  # friendly name shown in the UI
     netbird_setup_key_url: str = ""  # where a student gets their setup key
     netbird_docs_url: str = "https://docs.netbird.io/how-to/getting-started"
+    # The shared, reusable, ephemeral setup key every student joins with. This
+    # deployment runs one pseudo-identity for the whole cohort rather than a
+    # NetBird user per student, because the free plan caps users at 5; the
+    # key's peers are ephemeral and reaped an hour after they go offline, which
+    # is what keeps the cohort under the 100-peer cap. It is low-value on its
+    # own — it only lets a device *join* an overlay whose policies confine it
+    # to the lab route — so the connect modal shows it to a signed-in student
+    # directly, turning enrolment into one copy-pasted command.
+    netbird_setup_key: str = ""
+    # A NetBird API token (PAT), used only by the superadmin NetBird console to
+    # read peer status and reap slots by hand. Never sent to the browser. Empty
+    # disables the console's live view and the manual reap; the overlay itself
+    # keeps working, and native inactivity expiration keeps reaping.
+    netbird_api_token: str = ""
+    netbird_api_url: str = "https://api.netbird.io/api"
+    # The plan's peer ceiling, shown in the console so a superadmin sees how
+    # close the cohort is to it. The free plan is 100; this is display only.
+    netbird_peer_limit: int = 100
 
     # Canvas LMS integration (Phase 8). Setting the issuer + client id
     # activates the adapter (docs/integrations-canvas-lms.md): LTI 1.3

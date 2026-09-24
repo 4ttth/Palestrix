@@ -15,6 +15,7 @@ import { Topbar } from "@/components/shell/topbar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
+import { NetBirdConsole } from "@/components/admin/netbird-console";
 import { Button } from "@/components/ui/button";
 import { Countdown } from "@/components/lab/Countdown";
 import {
@@ -306,6 +307,9 @@ export function InfrastructureView() {
             <TenantsCard tenants={tenants} cloud={cloud} />
           </div>
         </div>
+
+        {/* Student-access overlay: peer roster and manual reap */}
+        <NetBirdConsole />
       </div>
     </>
   );
