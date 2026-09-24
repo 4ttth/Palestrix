@@ -40,10 +40,37 @@ def test_expected_hashes_match_the_documented_answers():
         assert item.sha256 == expected, f"{item.key} hash does not match {filename}"
 
 
-# The answer every capstone's evidence supports, written out in plain text so
-# the rubric is reviewable. Without this the hashes are opaque: a lesson could
-# be edited so its evidence no longer implies its own answer key, and nothing
-# would fail until a student did everything right and scored zero.
+# The answer every graded lab's evidence supports, written out in plain text
+# so the rubric is reviewable. Without this the hashes are opaque: a lesson
+# could be edited so its evidence no longer implies its own answer key, and
+# nothing would fail until a student did everything right and scored zero.
+MIDPATH_ANSWERS = {
+    "sqli-blind": {
+        "vuln-param.txt": "sort",
+        "error-code.txt": "42000",
+        "true-status.txt": "200",
+        "database-name.txt": "reports_prod",
+    },
+    "suricata-rules": {
+        "fired-sid.txt": "2019401",
+        "c2-port.txt": "4444",
+        "noisy-sid.txt": "2013028",
+        "tuned-action.txt": "drop",
+    },
+    "registry-triage": {
+        "run-value-name.txt": "onedrivesync",
+        "run-payload.txt": "upd.exe",
+        "usb-vendor.txt": "kingston",
+        "last-user.txt": "m.reyes",
+    },
+    "sigma-authoring": {
+        "logsource-product.txt": "windows",
+        "event-id.txt": "4688",
+        "detection-field.txt": "parentimage",
+        "rule-level.txt": "high",
+    },
+}
+
 CAPSTONE_ANSWERS = {
     "soc-capstone": {
         "patient-zero.txt": "ws-0442",
@@ -76,8 +103,11 @@ CAPSTONE_ANSWERS = {
 }
 
 
+ALL_LAB_ANSWERS = {**MIDPATH_ANSWERS, **CAPSTONE_ANSWERS}
+
+
 def test_capstone_hashes_match_their_documented_answers():
-    for slug, answers in CAPSTONE_ANSWERS.items():
+    for slug, answers in ALL_LAB_ANSWERS.items():
         spec = next(s for s in CATALOG if s.slug == slug)
         assert len(spec.items) == len(answers), f"{slug}: rubric and answer key differ in size"
         for item in spec.items:
@@ -102,7 +132,7 @@ def test_every_capstone_answer_appears_in_its_lesson():
             if lesson.lab_slug:
                 bodies[lesson.lab_slug] = lesson.body.lower()
 
-    for slug, answers in CAPSTONE_ANSWERS.items():
+    for slug, answers in ALL_LAB_ANSWERS.items():
         body = bodies.get(slug)
         assert body, f"{slug} is not bound to any lesson"
         for filename, value in answers.items():

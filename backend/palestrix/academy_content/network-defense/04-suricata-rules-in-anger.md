@@ -1,5 +1,6 @@
 ---
 summary: Writing IDS rules that catch the technique, survive contact with real traffic, and do not melt the sensor.
+lab: suricata-rules
 ---
 
 # Suricata rules in anger
@@ -117,3 +118,37 @@ More rules "not working" are capture problems than logic problems.
   you use each?
 - A rule that matched in testing never fires in production. Name three causes
   that have nothing to do with the rule's logic.
+
+## Lab: read the alerts, then tune them
+
+The **Suricata in Anger** lab gives you an `eve.json` from a sensor that
+watched a host get compromised, plus the ruleset that produced it. Your job is
+to separate the alert that mattered from the alert that is noise, and decide
+what an inline sensor should do about the real one. Four findings, read back by
+the checker; 80% completes the module.
+
+Everything you need is in `/root/case/`:
+
+- `eve.json` has one `alert` event for an outbound session to a control server.
+  Its `signature_id` is **2019401** ("ET TROJAN Generic Reverse Shell") — the
+  SID that fired on the C2 channel.
+- The same event's `dest_port` is **4444**. That is the port the beacon dialed.
+- `eve.json` also carries hundreds of `2013028` alerts ("ET POLICY curl User-
+  Agent") from the box's own package updates — matched, but pure false positive
+  here. That is the noisy SID.
+- `local.rules` shows the C2 rule written with `alert`. On a sensor deployed
+  inline (IPS mode), the action that would stop the channel rather than just
+  record it is **drop**.
+
+Answer in lower case, one value per file:
+
+```
+mkdir -p /root/answers
+
+echo '2019401' > /root/answers/fired-sid.txt
+echo '4444'    > /root/answers/c2-port.txt
+echo '2013028' > /root/answers/noisy-sid.txt
+echo 'drop'    > /root/answers/tuned-action.txt
+```
+
+Use `echo` as written; the grader compares exact contents, 25% each.

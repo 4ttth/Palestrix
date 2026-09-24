@@ -1,5 +1,6 @@
 ---
 summary: A timestamped database recording what ran, what was plugged in, and what the user did. Learn six keys and you can reconstruct a session.
+lab: registry-triage
 ---
 
 # Windows registry forensics
@@ -125,3 +126,35 @@ is a claim the artefact does not support; "the Run key was last written at
   prove?
 - A `Run` key with four values has a last-written time of 02:44. What can you
   say, and what would be overclaiming?
+
+## Lab: four questions, four hives
+
+The **Registry Triage** lab hands you exported hives from a compromised
+workstation. You will answer four questions, each from a different corner of
+the registry, and record them on the box. The checker reads them back; 80%
+completes the module.
+
+The exports are in `/root/case/` as text, so `grep` is enough — no live
+registry needed:
+
+- `ntuser_run.txt` (the user's `...\CurrentVersion\Run`) has a value named
+  **onedrivesync** that no real OneDrive install creates. That is the
+  persistence value masquerading as a sync client.
+- Its data points at `C:\Users\Public\upd.exe` — the payload it actually
+  launches is **upd.exe**.
+- `usbstor.txt` shows one device enumerated under `USBSTOR`, with the vendor
+  string `Disk&Ven_Kingston&Prod_DataTraveler`. The vendor is **Kingston**.
+- `sam_users.txt` records the last interactive logon as account **m.reyes**.
+
+Answer in lower case, one value per file:
+
+```
+mkdir -p /root/answers
+
+echo 'onedrivesync' > /root/answers/run-value-name.txt
+echo 'upd.exe'      > /root/answers/run-payload.txt
+echo 'kingston'     > /root/answers/usb-vendor.txt
+echo 'm.reyes'      > /root/answers/last-user.txt
+```
+
+Use `echo` as written; the grader compares exact contents, 25% each.

@@ -1,5 +1,6 @@
 ---
 summary: Write a detection once in a portable format, and stop hand-porting logic between SIEM query languages.
+lab: sigma-authoring
 ---
 
 # Sigma rules from scratch
@@ -113,3 +114,35 @@ which is worth finding out before an incident rather than during one.
 - Why is `|endswith` usually the right modifier for a process image path?
 - A rule fires forty times a day and is closed as benign every time. Name two
   different correct responses, and say what decides between them.
+
+## Lab: turn one detection into a portable rule
+
+The **Sigma From Scratch** lab gives you a single confirmed detection — a
+process-creation event from a real intrusion — and asks you to make the four
+decisions that turn it into a portable Sigma rule. You record the decisions on
+the box and the checker reads them back; 80% completes the module.
+
+The evidence is one file, `/root/case/event.txt`, a Windows process-creation
+record:
+
+- It is a **windows** log, so the `logsource` product is windows.
+- The record is a Security **4688** ("a new process has been created") — the
+  event id your `logsource`/`detection` keys on.
+- The malicious thing about it is *what launched it*: `winword.exe` spawning
+  `cmd.exe`. The field that expresses "who is the parent" is **parentimage**,
+  and that is the field your `detection` selects on.
+- Word spawning a shell is a reliable intrusion signal, not a maybe, so the
+  rule's `level` is **high**.
+
+Answer in lower case, one value per file:
+
+```
+mkdir -p /root/answers
+
+echo 'windows'     > /root/answers/logsource-product.txt
+echo '4688'        > /root/answers/event-id.txt
+echo 'parentimage' > /root/answers/detection-field.txt
+echo 'high'        > /root/answers/rule-level.txt
+```
+
+Use `echo` as written; the grader compares exact contents, 25% each.
