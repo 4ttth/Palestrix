@@ -120,22 +120,22 @@ complete the module.
 Answer in lower case, one value per file, exactly as the command shows:
 
 ```
-mkdir -p /root/answers
+mkdir -p /home/student/answers
 
 # 1. The filename that was downloaded and opened
-echo 'something.xlsx' > /root/answers/entry-file.txt
+echo 'something.xlsx' > /home/student/answers/entry-file.txt
 
 # 2. The filename of the dropped library
-echo 'thing.dll' > /root/answers/dropped-dll.txt
+echo 'thing.dll' > /home/student/answers/dropped-dll.txt
 
 # 3. The Run value name used for persistence
-echo 'somename' > /root/answers/persistence-value.txt
+echo 'somename' > /home/student/answers/persistence-value.txt
 
 # 4. The serial number of the USB device
-echo '000000000000' > /root/answers/usb-serial.txt
+echo '000000000000' > /home/student/answers/usb-serial.txt
 
 # 5. The filename of the tool used to destroy evidence
-echo 'tool.exe' > /root/answers/wipe-tool.txt
+echo 'tool.exe' > /home/student/answers/wipe-tool.txt
 ```
 
 The values above are **placeholders** — replace each with what the exhibits

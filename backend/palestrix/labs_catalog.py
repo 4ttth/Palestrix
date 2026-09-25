@@ -60,9 +60,9 @@ def _answer(key: str, title: str, weight: int, filename: str, sha256: str) -> Ca
     return CatalogRubricItem(
         key=key,
         title=title,
-        detail=f"/root/answers/{filename} must contain exactly the expected value.",
+        detail=f"/home/student/answers/{filename} must contain exactly the expected value.",
         weight_percent=weight,
-        path=f"/root/answers/{filename}",
+        path=f"/home/student/answers/{filename}",
         sha256=sha256,
     )
 

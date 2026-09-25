@@ -104,19 +104,19 @@ reads them back and grades this module. You need 80% to complete it.
 Answer in lower case, one value per file, exactly as the command shows:
 
 ```
-mkdir -p /root/answers
+mkdir -p /home/student/answers
 
 # 1. The address the intrusion came from
-echo '198.51.100.7' > /root/answers/source-ip.txt
+echo '198.51.100.7' > /home/student/answers/source-ip.txt
 
 # 2. The account that successfully logged in
-echo 'someuser' > /root/answers/account.txt
+echo 'someuser' > /home/student/answers/account.txt
 
 # 3. The authentication method that succeeded
-echo 'password' > /root/answers/method.txt
+echo 'password' > /home/student/answers/method.txt
 
 # 4. The account it escalated to seconds later
-echo 'nobody' > /root/answers/escalated-to.txt
+echo 'nobody' > /home/student/answers/escalated-to.txt
 ```
 
 The values above are **placeholders** — replace each with what the log

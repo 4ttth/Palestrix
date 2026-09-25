@@ -108,22 +108,22 @@ need 80% to complete the module.
 Answer in lower case, one value per file, exactly as the command shows:
 
 ```
-mkdir -p /root/answers
+mkdir -p /home/student/answers
 
 # 1. The internal address that is compromised
-echo '10.0.0.0' > /root/answers/pivot-host.txt
+echo '10.0.0.0' > /home/student/answers/pivot-host.txt
 
 # 2. The protocol carrying the bulk exfiltration, one word
-echo 'ftp' > /root/answers/exfil-protocol.txt
+echo 'ftp' > /home/student/answers/exfil-protocol.txt
 
 # 3. The registered domain the data went to
-echo 'example.com' > /root/answers/exfil-domain.txt
+echo 'example.com' > /home/student/answers/exfil-domain.txt
 
 # 4. The beacon's mean interval in whole seconds, digits only
-echo '0' > /root/answers/beacon-interval.txt
+echo '0' > /home/student/answers/beacon-interval.txt
 
 # 5. The segment that was reached despite the deny rule, one word
-echo 'guest' > /root/answers/violated-segment.txt
+echo 'guest' > /home/student/answers/violated-segment.txt
 ```
 
 The values above are **placeholders** — replace each with what the exhibits

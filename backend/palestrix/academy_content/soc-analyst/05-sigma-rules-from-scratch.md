@@ -137,12 +137,12 @@ record:
 Answer in lower case, one value per file:
 
 ```
-mkdir -p /root/answers
+mkdir -p /home/student/answers
 
-echo 'windows'     > /root/answers/logsource-product.txt
-echo '4688'        > /root/answers/event-id.txt
-echo 'parentimage' > /root/answers/detection-field.txt
-echo 'high'        > /root/answers/rule-level.txt
+echo 'windows'     > /home/student/answers/logsource-product.txt
+echo '4688'        > /home/student/answers/event-id.txt
+echo 'parentimage' > /home/student/answers/detection-field.txt
+echo 'high'        > /home/student/answers/rule-level.txt
 ```
 
 Use `echo` as written; the grader compares exact contents, 25% each.

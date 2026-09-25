@@ -91,22 +91,22 @@ the module.
 Answer in lower case, one value per file, exactly as the command shows:
 
 ```
-mkdir -p /root/answers
+mkdir -p /home/student/answers
 
 # 1. The hostname of patient zero
-echo 'ws-0000' > /root/answers/patient-zero.txt
+echo 'ws-0000' > /home/student/answers/patient-zero.txt
 
 # 2. The filename that delivered the initial access
-echo 'something.xlsm' > /root/answers/initial-access.txt
+echo 'something.xlsm' > /home/student/answers/initial-access.txt
 
 # 3. The account used to move to the second host
-echo 'svc_example' > /root/answers/service-account.txt
+echo 'svc_example' > /home/student/answers/service-account.txt
 
 # 4. The name of the service installed for persistence
-echo 'someservice' > /root/answers/persistence.txt
+echo 'someservice' > /home/student/answers/persistence.txt
 
 # 5. Hours between first compromise and detection, digits only
-echo '0' > /root/answers/dwell-hours.txt
+echo '0' > /home/student/answers/dwell-hours.txt
 ```
 
 The values above are **placeholders** — replace each with what the evidence

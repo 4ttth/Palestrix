@@ -149,12 +149,12 @@ registry needed:
 Answer in lower case, one value per file:
 
 ```
-mkdir -p /root/answers
+mkdir -p /home/student/answers
 
-echo 'onedrivesync' > /root/answers/run-value-name.txt
-echo 'upd.exe'      > /root/answers/run-payload.txt
-echo 'kingston'     > /root/answers/usb-vendor.txt
-echo 'm.reyes'      > /root/answers/last-user.txt
+echo 'onedrivesync' > /home/student/answers/run-value-name.txt
+echo 'upd.exe'      > /home/student/answers/run-payload.txt
+echo 'kingston'     > /home/student/answers/usb-vendor.txt
+echo 'm.reyes'      > /home/student/answers/last-user.txt
 ```
 
 Use `echo` as written; the grader compares exact contents, 25% each.

@@ -143,12 +143,12 @@ Everything you need is in `/root/case/`:
 Answer in lower case, one value per file:
 
 ```
-mkdir -p /root/answers
+mkdir -p /home/student/answers
 
-echo '2019401' > /root/answers/fired-sid.txt
-echo '4444'    > /root/answers/c2-port.txt
-echo '2013028' > /root/answers/noisy-sid.txt
-echo 'drop'    > /root/answers/tuned-action.txt
+echo '2019401' > /home/student/answers/fired-sid.txt
+echo '4444'    > /home/student/answers/c2-port.txt
+echo '2013028' > /home/student/answers/noisy-sid.txt
+echo 'drop'    > /home/student/answers/tuned-action.txt
 ```
 
 Use `echo` as written; the grader compares exact contents, 25% each.
