@@ -210,7 +210,26 @@ export function ConnectHelp({ endpoint }: { endpoint: string | null }) {
                 {endpoint ? (
                   <>
                     <p>With NetBird connected, this works from your terminal:</p>
-                    <Code>{endpoint}</Code>
+                    <CopyCode text={endpoint} />
+                    {info.lab_username && (
+                      <p>
+                        Log in as{" "}
+                        <code className="font-mono text-foreground">
+                          {info.lab_username}
+                        </code>
+                        {info.lab_password ? (
+                          <>
+                            {" "}with the password{" "}
+                            <code className="font-mono text-foreground">
+                              {info.lab_password}
+                            </code>
+                            . It is the same on every lab.
+                          </>
+                        ) : (
+                          <> with the password your instructor gave you.</>
+                        )}
+                      </p>
+                    )}
                   </>
                 ) : (
                   <p>

@@ -119,6 +119,7 @@ def test_delete_peer_refuses_the_router(client, admin, monkeypatch):
 def test_access_endpoint_carries_the_shared_join_command(client, student, monkeypatch):
     monkeypatch.setenv("PALESTRIX_NETBIRD_MANAGEMENT_URL", "https://api.netbird.io")
     monkeypatch.setenv("PALESTRIX_NETBIRD_SETUP_KEY", "SHARED-KEY-123")
+    monkeypatch.setenv("PALESTRIX_LAB_SSH_PASSWORD", "PalestrixLab2026")
     get_settings.cache_clear()
 
     body = client.get("/api/v1/instances/access", headers=student).json()
@@ -127,7 +128,14 @@ def test_access_endpoint_carries_the_shared_join_command(client, student, monkey
     assert body["join_command"] == (
         "netbird up --management-url https://api.netbird.io --setup-key SHARED-KEY-123"
     )
+    # The lab login rides along so the modal is one place.
+    assert body["lab_username"] == "student"
+    assert body["lab_password"] == "PalestrixLab2026"
 
-    for var in ("PALESTRIX_NETBIRD_MANAGEMENT_URL", "PALESTRIX_NETBIRD_SETUP_KEY"):
+    for var in (
+        "PALESTRIX_NETBIRD_MANAGEMENT_URL",
+        "PALESTRIX_NETBIRD_SETUP_KEY",
+        "PALESTRIX_LAB_SSH_PASSWORD",
+    ):
         monkeypatch.delenv(var, raising=False)
     get_settings.cache_clear()

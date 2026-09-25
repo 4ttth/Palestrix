@@ -581,6 +581,11 @@ class RemoteAccessOut(BaseModel):
     # for a key of their own — this deployment shares one.
     setup_key: str = ""
     join_command: str = ""
+    # The SSH login for a lab VM. One shared account baked into the template,
+    # so the modal can show a student exactly how to get in. Password is empty
+    # when the deployment has not set one.
+    lab_username: str = ""
+    lab_password: str = ""
 
 
 class NetBirdPeerOut(BaseModel):

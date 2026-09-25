@@ -144,6 +144,9 @@ export type RemoteAccessOut = {
    * whole cohort rather than a NetBird user per student). */
   setup_key: string;
   join_command: string;
+  /** Shared SSH login for a lab VM, shown in the connect modal. */
+  lab_username: string;
+  lab_password: string;
 };
 
 export type NetBirdPeerOut = {

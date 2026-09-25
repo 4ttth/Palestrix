@@ -198,6 +198,16 @@ class Settings(BaseSettings):
     # close the cohort is to it. The free plan is 100; this is display only.
     netbird_peer_limit: int = 100
 
+    # The SSH credential a student uses to reach a provisioned lab VM. The
+    # platform bakes one shared account into the VM template rather than
+    # minting a credential per instance, so this is the same for every lab;
+    # the connect modal shows it to a signed-in student beside the ssh line,
+    # the way it shows the shared overlay key. Empty password means the modal
+    # prints the username and lets the student use whatever the template's own
+    # cloud-init set, rather than displaying a blank.
+    lab_ssh_username: str = "student"
+    lab_ssh_password: str = ""
+
     # Canvas LMS integration (Phase 8). Setting the issuer + client id
     # activates the adapter (docs/integrations-canvas-lms.md): LTI 1.3
     # launches, NRPS roster sync, AGS grade passback, and Deep Linking 2.0.

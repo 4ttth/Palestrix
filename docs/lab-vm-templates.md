@@ -88,13 +88,37 @@ qm set 8001 --ide2 local-lvm:cloudinit
 qm disk resize 8001 scsi0 4G
 ```
 
-Now add the agent. `virt-customize` (from `libguestfs-tools`, already present on
-a Proxmox node) edits the disk offline, so there is no first boot to log into
-and no throwaway credential to clean up afterwards:
+Now prepare the guest. `virt-customize` (from `libguestfs-tools`, already
+present on a Proxmox node) edits the disk offline, so there is no first boot to
+log into and no throwaway credential to clean up afterwards. Three things have
+to be true in the image, and the `debian-12-genericcloud` base gets none of
+them right on its own:
+
+- **`ssh.service` must be enabled.** The genericcloud image ships `sshd` but
+  leaves the service *disabled*, so a clone boots, gets a lease, and answers
+  ARP while nothing ever listens on port 22 — the exact failure that reads as
+  "the lab is unreachable" when the guest is fine.
+- **`PasswordAuthentication` must be `yes`.** The image sets it to `no`, so
+  even with `sshd` running a student's password is refused.
+- **`qemu-guest-agent` must be enabled.** `provision` waits on the agent for
+  the VM's address, and the checker reads answer files through it.
+
+`systemctl enable` inside the libguestfs appliance does not reliably create the
+`multi-user.target.wants` symlinks, so create them directly. The banner every
+lab shows on login (`/etc/motd`) goes in here too:
 
 ```sh
 qm stop 8001 2>/dev/null   # only if it was started
-virt-customize -a /dev/pve/vm-8001-disk-0   --install qemu-guest-agent   --run-command 'systemctl enable qemu-guest-agent'
+# openssh-server and qemu-guest-agent are already in the genericcloud image;
+# --install only runs apt if they are missing (needs host internet then).
+virt-customize -a /dev/pve/vm-8001-disk-0 \
+  --install openssh-server,qemu-guest-agent \
+  --upload /root/palestrix-motd:/etc/motd \
+  --write /etc/ssh/sshd_config.d/60-palestrix.conf:'PasswordAuthentication yes' \
+  --run-command 'sed -i "s/^PasswordAuthentication no/PasswordAuthentication yes/" /etc/ssh/sshd_config' \
+  --link /lib/systemd/system/ssh.service:/etc/systemd/system/multi-user.target.wants/ssh.service \
+  --link /lib/systemd/system/qemu-guest-agent.service:/etc/systemd/system/multi-user.target.wants/qemu-guest-agent.service \
+  --run-command 'chmod 644 /etc/motd /etc/ssh/sshd_config.d/60-palestrix.conf'
 ```
 
 The alternative — boot it, SSH in, `apt install` — needs a cloud-init login and
@@ -102,10 +126,13 @@ a network the lab VLAN deliberately does not have, so prefer the offline edit.
 
 Four gigabytes of disk is deliberate: it is the number every clone copies.
 
-Give it a student login through cloud-init rather than baking one in:
+Give it a **known** student login through cloud-init. Set a real password, not
+`openssl passwd` with no argument (that reads an empty password and bakes a
+hash nobody can reproduce). The value is the one the connect modal shows every
+student — `PALESTRIX_LAB_SSH_PASSWORD` on the API must match it:
 
 ```sh
-qm set 8001 --ciuser student --cipassword "$(openssl passwd -6)" --ipconfig0 ip=dhcp
+qm set 8001 --ciuser student --cipassword 'PalestrixLab2026' --ipconfig0 ip=dhcp
 ```
 
 > **The guest agent is not optional.** Automated checking reads answer files

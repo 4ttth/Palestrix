@@ -203,6 +203,8 @@ def remote_access(principal: Principal = Depends(get_principal)):
         docs_url=settings.netbird_docs_url,
         setup_key=key,
         join_command=join_command,
+        lab_username=settings.lab_ssh_username,
+        lab_password=settings.lab_ssh_password,
     )
 
 
