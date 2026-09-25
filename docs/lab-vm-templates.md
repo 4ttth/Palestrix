@@ -121,8 +121,39 @@ virt-customize -a /dev/pve/vm-8001-disk-0 \
   --run-command 'chmod 644 /etc/motd /etc/ssh/sshd_config.d/60-palestrix.conf'
 ```
 
-The alternative — boot it, SSH in, `apt install` — needs a cloud-init login and
-a network the lab VLAN deliberately does not have, so prefer the offline edit.
+**Bake fixed SSH host keys too.** Labs are ephemeral and the tenant VLAN reuses
+a small pool of addresses, so a student who connects to `10.24.0.178` today and
+to a *different* lab on `10.24.0.178` next week would get SSH's "REMOTE HOST
+IDENTIFICATION HAS CHANGED" alarm every time — each clone otherwise generates
+its own host keys on first boot. Generate one set of keys, upload them, and
+tell cloud-init to stop regenerating them (`ssh_deletekeys: false`), so every
+lab presents the same key and the warning never fires:
+
+```sh
+mkdir -p /root/labhostkeys && cd /root/labhostkeys
+ssh-keygen -t ed25519 -N '' -f ssh_host_ed25519_key -q
+ssh-keygen -t rsa -b 3072 -N '' -f ssh_host_rsa_key -q
+ssh-keygen -t ecdsa -N '' -f ssh_host_ecdsa_key -q
+printf 'ssh_deletekeys: false\n' > /root/99-palestrix-hostkeys.cfg
+virt-customize -a /dev/pve/vm-8001-disk-0 \
+  --upload /root/labhostkeys/ssh_host_ed25519_key:/etc/ssh/ssh_host_ed25519_key \
+  --upload /root/labhostkeys/ssh_host_ed25519_key.pub:/etc/ssh/ssh_host_ed25519_key.pub \
+  --upload /root/labhostkeys/ssh_host_rsa_key:/etc/ssh/ssh_host_rsa_key \
+  --upload /root/labhostkeys/ssh_host_rsa_key.pub:/etc/ssh/ssh_host_rsa_key.pub \
+  --upload /root/labhostkeys/ssh_host_ecdsa_key:/etc/ssh/ssh_host_ecdsa_key \
+  --upload /root/labhostkeys/ssh_host_ecdsa_key.pub:/etc/ssh/ssh_host_ecdsa_key.pub \
+  --upload /root/99-palestrix-hostkeys.cfg:/etc/cloud/cloud.cfg.d/99-palestrix-hostkeys.cfg \
+  --run-command 'chmod 600 /etc/ssh/ssh_host_*_key'
+```
+
+Sharing one host key across every ephemeral lab is a deliberate trade: these
+VMs are behind the overlay and already share one login, so host authentication
+buys nothing, and the alternative is an alarm students learn to click through —
+the worst security posture of all.
+
+The alternative to any of this — boot it, SSH in, `apt install` — needs a
+cloud-init login and a network the lab VLAN deliberately does not have, so
+prefer the offline edit.
 
 Four gigabytes of disk is deliberate: it is the number every clone copies.
 

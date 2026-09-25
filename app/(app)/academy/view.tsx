@@ -10,7 +10,8 @@
  */
 
 import { useEffect, useState } from "react";
-import { CheckCircle, Circle, Lock, SealCheck } from "@phosphor-icons/react";
+import { useRouter } from "next/navigation";
+import { CheckCircle, Circle, Lock, RocketLaunch, SealCheck } from "@phosphor-icons/react";
 import { Topbar } from "@/components/shell/topbar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +23,7 @@ import { useApi } from "@/lib/api/hooks";
 import { useSession } from "@/lib/api/session";
 import { Markdown } from "@/components/ui/markdown";
 import { useToast } from "@/components/ui/toast";
-import type { ModuleDetailOut, ModuleOut, PathOut } from "@/lib/api/types";
+import type { InstanceOut, ModuleDetailOut, ModuleOut, PathOut } from "@/lib/api/types";
 
 type ModuleState = "done" | "current" | "locked";
 
@@ -49,6 +50,8 @@ type PathWithModules = { path: PathOut; modules: ModuleOut[] };
 export function AcademyView() {
   const { refreshSummary } = useSession();
   const toast = useToast();
+  const router = useRouter();
+  const [launching, setLaunching] = useState(false);
   const paths = useApi<PathOut[]>("/api/v1/academy/paths");
   const [byPath, setByPath] = useState<PathWithModules[] | null>(null);
   const [reading, setReading] = useState<ModuleDetailOut | null>(null);
@@ -109,6 +112,26 @@ export function AcademyView() {
     }
   }
 
+  // Launch the lab bound to this lesson and go straight to it. The
+  // instances endpoint resolves a template by slug, so the module's
+  // lab slug is enough — the roadmap does not need the template id.
+  async function launchLab(slug: string) {
+    setLaunching(true);
+    try {
+      const inst = await api.post<InstanceOut>("/api/v1/instances", {
+        template_id: slug,
+      });
+      toast.success("Lab launching", "Taking you to it — the address appears when it is ready.");
+      router.push(`/labs/${inst.id}`);
+    } catch (err) {
+      toast.error(
+        "Could not launch the lab",
+        err instanceof ApiError ? err.message : "The request failed."
+      );
+      setLaunching(false);
+    }
+  }
+
   async function complete(moduleId: string) {
     setCompleting(moduleId);
     setFailure(null);
@@ -139,6 +162,12 @@ export function AcademyView() {
         );
       }
       void refreshSummary();
+      // Marking complete returns to the roadmap, where the just-finished
+      // module now reads as done and the next one becomes current — the
+      // natural next glance, rather than leaving the reader on a lesson they
+      // have finished.
+      setReading(null);
+      setReadingId(null);
     } catch (err) {
       const text =
         err instanceof ApiError ? err.message : "Completion failed.";
@@ -249,21 +278,34 @@ export function AcademyView() {
               ) : (
                 <>
                   {reading.lab && (
-                    <div className="mb-5 rounded-(--radius-card) border border-border bg-surface-2/50 px-4 py-3 text-[13px]">
-                      <p className="font-medium">
-                        Hands-on: {reading.lab.title || reading.lab.slug}
-                      </p>
-                      <p className="mt-1 leading-relaxed text-muted">
-                        {!reading.lab.available
-                          ? "This lab has not been imported on this deployment yet, so the module can be completed without it."
-                          : !reading.lab.scheme_published
-                            ? "Grading for this lab is still in draft, so the module can be completed without passing it."
-                            : reading.lab.passed
-                              ? `Passed with ${reading.lab.best_percent}% (${reading.lab.pass_percent}% required).`
-                              : reading.lab.best_percent === null
-                                ? `Launch the lab and pass the automated check — ${reading.lab.pass_percent}% required.`
-                                : `Best check so far ${reading.lab.best_percent}%; ${reading.lab.pass_percent}% required.`}
-                      </p>
+                    <div className="mb-5 flex flex-wrap items-start justify-between gap-3 rounded-(--radius-card) border border-border bg-surface-2/50 px-4 py-3 text-[13px]">
+                      <div className="min-w-0">
+                        <p className="font-medium">
+                          Hands-on: {reading.lab.title || reading.lab.slug}
+                        </p>
+                        <p className="mt-1 leading-relaxed text-muted">
+                          {!reading.lab.available
+                            ? "This lab has not been imported on this deployment yet, so the module can be completed without it."
+                            : !reading.lab.scheme_published
+                              ? "Grading for this lab is still in draft, so the module can be completed without passing it."
+                              : reading.lab.passed
+                                ? `Passed with ${reading.lab.best_percent}% (${reading.lab.pass_percent}% required).`
+                                : reading.lab.best_percent === null
+                                  ? `Launch the lab and pass the automated check — ${reading.lab.pass_percent}% required.`
+                                  : `Best check so far ${reading.lab.best_percent}%; ${reading.lab.pass_percent}% required.`}
+                        </p>
+                      </div>
+                      {reading.lab.available && (
+                        <Button
+                          size="sm"
+                          loading={launching}
+                          loadingLabel="Launching"
+                          onClick={() => launchLab(reading.lab!.slug)}
+                        >
+                          <RocketLaunch size={15} aria-hidden />
+                          Launch lab
+                        </Button>
+                      )}
                     </div>
                   )}
                   {reading.body ? (
