@@ -173,6 +173,22 @@ def create_app() -> FastAPI:
         SecurityHeadersMiddleware, production=settings.environment == "production"
     )
 
+    # The rate limiter sits outermost so a flood is rejected doing as little
+    # work as possible. "auth" is the brute-force bucket the login form needs.
+    if settings.rate_limit_enabled:
+        from .ratelimit import RateLimitMiddleware
+
+        app.add_middleware(
+            RateLimitMiddleware,
+            api_prefix=API_PREFIX,
+            limits={
+                "general": settings.rate_limit_general_per_minute,
+                "launch": settings.rate_limit_launch_per_minute,
+                "flag": settings.rate_limit_flag_per_minute,
+                "auth": settings.rate_limit_auth_per_minute,
+            },
+        )
+
     api = APIRouter(prefix=API_PREFIX)
     api.include_router(auth.router)
     api.include_router(users.router)

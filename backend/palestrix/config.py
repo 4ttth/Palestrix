@@ -175,6 +175,17 @@ class Settings(BaseSettings):
     # for a site whose collector really is internal.
     allow_private_webhooks: bool = False
 
+    # Rate limits, per minute per caller (0 disables a bucket). These are the
+    # numbers docs/public-api.md publishes and the limiter enforces
+    # (palestrix/ratelimit.py). "auth" covers the credential endpoints --
+    # without it the login form takes unlimited password guesses. Per process,
+    # so the edge proxy stays the authoritative limiter for a deployment.
+    rate_limit_enabled: bool = True
+    rate_limit_general_per_minute: int = 600
+    rate_limit_launch_per_minute: int = 60
+    rate_limit_flag_per_minute: int = 10
+    rate_limit_auth_per_minute: int = 20
+
     netbird_management_url: str = ""  # e.g. https://netbird.example.edu
     netbird_network_name: str = ""  # friendly name shown in the UI
     netbird_setup_key_url: str = ""  # where a student gets their setup key

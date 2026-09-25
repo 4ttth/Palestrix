@@ -71,6 +71,18 @@ def login(client: TestClient, email: str) -> dict:
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    """The rate limiter is a process-global sliding window, so counts from one
+    test would otherwise leak into the next (every test shares the TestClient's
+    peer identity). Reset before each test; the limiter stays on so its own
+    test exercises the real middleware."""
+    from palestrix import ratelimit
+
+    ratelimit.reset()
+    yield
+
+
 @pytest.fixture()
 def student(client):
     return login(client, "stud1@example.edu")
