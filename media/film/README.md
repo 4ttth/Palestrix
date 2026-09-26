@@ -21,6 +21,12 @@ lifecycle states, and the `swift` / `spring` easings from
 
 ## Files
 
+- `palestrix-film.mp4` is the rendered film: 1080p60 H.264 at about 7 Mb/s,
+  with AAC audio at −16 LUFS (55 MB). `poster.jpg` is its end card. The
+  CRF-16 master from `render.mjs` is about 320 MB, because the per-frame film
+  grain barely compresses. The committed file is a two-step delivery encode
+  of that master (see Rebuild).
+
 - `index.html` is the whole film. Each frame is a pure function of time
   (`renderAt(t)`), so the page plays live in a browser and renders
   frame-exact. Open it directly: **space** pauses, **← →** scrub two seconds,
@@ -42,6 +48,9 @@ pip install numpy imageio-ffmpeg            # imageio-ffmpeg ships ffmpeg with l
 python soundtrack.py                         # → soundtrack.wav
 FFMPEG=$(python -c "import imageio_ffmpeg as f; print(f.get_ffmpeg_exe())") \
   node render.mjs                            # → palestrix-film.mp4, ~25 min
+# delivery encode (what is committed)
+$FFMPEG -i palestrix-film.mp4 -c:v libx264 -preset slow -b:v 7M -maxrate 10M \
+  -bufsize 20M -tune film -pix_fmt yuv420p -c:a copy -movflags +faststart out.mp4
 node render.mjs --stills 5.4,17.9,29.5       # review frames → stills/
 node render.mjs --fps 30 --from 26 --to 34   # quick partial pass
 ```

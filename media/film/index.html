@@ -674,9 +674,9 @@ scene("s5", 26.4, 34.2, (t) => {
     fx(tm.el, { o: rk, y: y + (1 - rk) * 16 });
     const prevS = tm.s[Math.max(0, stage - 1)], curS = tm.s[stage];
     tm.el.querySelector(".sc").textContent = fmt(lerp(prevS, curS, stage === 0 ? 1 : P(t, LB_T[stage], 0.8, E.soft)));
-    tm.el.querySelector(".rk").textContent = String(r1 + 1).padStart(2, "0");
+    tm.el.querySelector(".rk").textContent = String(Math.round(lerp(r0, r1, mk)) + 1).padStart(2, "0");
     const climbing = stage > 0 && r1 < r0 && t - LB_T[stage] < 1.8;
-    const lead = r1 === 0;
+    const lead = Math.round(lerp(r0, r1, mk)) === 0;
     tm.el.style.background = climbing ? "var(--accent-soft)" : lead ? "rgba(255,255,255,.03)" : "transparent";
     tm.el.querySelector(".sc").style.color = lead ? "var(--amber)" : "var(--fg)";
   });
