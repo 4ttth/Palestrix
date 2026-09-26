@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BrandLockup } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 
 /*
@@ -9,8 +10,8 @@ export function MarketingNav() {
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur-sm">
       <div className="mx-auto flex h-16 max-w-[1200px] items-center justify-between px-6">
-        <Link href="/" className="text-[17px] font-semibold tracking-tight">
-          Palestr<span className="text-accent">IX</span>
+        <Link href="/" aria-label="PalestrIX home">
+          <BrandLockup textSize={17} />
         </Link>
         <nav className="hidden items-center gap-7 text-sm text-muted md:flex">
           <Link href="#labs" className="transition-colors hover:text-foreground">

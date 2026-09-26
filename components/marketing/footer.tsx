@@ -1,13 +1,12 @@
 import Link from "next/link";
+import { BrandLockup } from "@/components/brand/logo";
 
 export function MarketingFooter() {
   return (
     <footer className="border-t border-border">
       <div className="mx-auto grid max-w-[1200px] gap-10 px-6 py-14 md:grid-cols-[2fr_1fr_1fr_1fr]">
         <div>
-          <p className="text-[17px] font-semibold tracking-tight">
-            Palestr<span className="text-accent">IX</span>
-          </p>
+          <BrandLockup textSize={17} />
           <p className="mt-3 max-w-[38ch] text-sm leading-relaxed text-muted">
             A cyber range for classrooms, built entirely on open-source
             infrastructure. Run it on your own metal or in your cloud account.

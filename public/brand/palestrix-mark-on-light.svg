@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- PalestrIX "The Keystone", fixed colour for light grounds (Paper #F6F6F7 or white).
+     Palaestra Ink wall, Keystone Blue keystone. Geometry: see palestrix-mark.svg. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="100%" height="100%" role="img" aria-label="PalestrIX">
+  <path fill="#0D0D10" d="M28 4H4v56h56V36H48v12H16V16h12z"/>
+  <rect fill="#2F6FE0" x="36" y="4" width="24" height="24"/>
+</svg>

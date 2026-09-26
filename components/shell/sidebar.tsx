@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { BrandLockup } from "@/components/brand/logo";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import {
@@ -139,8 +140,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
 function Wordmark() {
   return (
-    <Link href="/dashboard" className="text-[15px] font-semibold tracking-tight">
-      Palestr<span className="text-accent">IX</span>
+    <Link href="/dashboard" aria-label="PalestrIX dashboard">
+      <BrandLockup textSize={15} />
     </Link>
   );
 }

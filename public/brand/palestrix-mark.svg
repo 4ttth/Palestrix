@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  PalestrIX — "The Keystone" (primary mark, adaptive)
+
+  A palaestra seen from above: a square courtyard enclosed by a heavy wall,
+  with the top-right corner lifted out and set back as a separate block, the
+  keystone. The wall is the isolated range; the courtyard is where the
+  training happens; the keystone is the learner, the one piece that completes
+  the structure. The 8-unit channel around the keystone is the only way in,
+  so the mark reads as "contained, but open to those enrolled".
+
+  Construction (64-unit grid, every coordinate a multiple of 4, so the mark
+  lands on whole pixels at 16, 32, 48 and 64 px):
+    outer bounds   4..60   (56 units; 4-unit safe margin inside the viewBox)
+    wall weight    12      (W)
+    courtyard      16..48  (32 units)
+    channel        8       (2/3 W)
+    keystone       36..60  (24 units = 2 W)
+
+  Colour follows the viewer: Palaestra Ink wall + Keystone Blue on light
+  grounds, Chalk wall + Signal Blue on dark grounds. For fixed-colour
+  contexts use palestrix-mark-on-light.svg / -on-dark.svg / -mono.svg.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="title">
+  <title id="title">PalestrIX</title>
+  <style>
+    .wall     { fill: #0D0D10; } /* Palaestra Ink */
+    .keystone { fill: #2F6FE0; } /* Keystone Blue */
+    @media (prefers-color-scheme: dark) {
+      .wall     { fill: #EBEBF0; } /* Chalk */
+      .keystone { fill: #6F97EE; } /* Signal Blue */
+    }
+  </style>
+
+  <!-- The wall: one continuous L-shaped enclosure, traced clockwise from the
+       end of the top arm, around the outside, and back through the courtyard. -->
+  <path class="wall" d="M28 4H4v56h56V36H48v12H16V16h12z"/>
+
+  <!-- The keystone: the lifted corner, 2W square, set off by the channel. -->
+  <rect class="keystone" x="36" y="4" width="24" height="24"/>
+</svg>

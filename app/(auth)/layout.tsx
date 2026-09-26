@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { BrandLockup } from "@/components/brand/logo";
 
 /*
  * Auth gateway: split screen. Form left, photographic panel right
@@ -14,8 +15,8 @@ export default function AuthLayout({
   return (
     <div className="grid min-h-[100dvh] lg:grid-cols-[1fr_1fr]">
       <div className="flex flex-col px-6 py-8 sm:px-12">
-        <Link href="/" className="text-[17px] font-semibold tracking-tight">
-          Palestr<span className="text-accent">IX</span>
+        <Link href="/" aria-label="PalestrIX home" className="self-start">
+          <BrandLockup textSize={17} />
         </Link>
         <div className="flex flex-1 items-center justify-center py-12">
           <div className="w-full max-w-sm">{children}</div>

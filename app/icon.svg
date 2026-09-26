@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- PalestrIX favicon: the Keystone mark, following the browser's colour scheme.
+       Pixel-aligned at 16/32/48 px (all coordinates are multiples of 4). -->
+  <style>
+    path { fill: #0D0D10; } rect { fill: #2F6FE0; }
+    @media (prefers-color-scheme: dark) { path { fill: #EBEBF0; } rect { fill: #6F97EE; } }
+  </style>
+  <path d="M28 4H4v56h56V36H48v12H16V16h12z"/>
+  <rect x="36" y="4" width="24" height="24"/>
+</svg>
