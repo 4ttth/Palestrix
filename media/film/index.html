@@ -1,0 +1,913 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PalestrIX — Film</title>
+<!--
+  PalestrIX product film. 60 seconds, 1920×1080, authored for 60 fps.
+
+  Every frame is a pure function of time: renderAt(t) sets the whole stage
+  from t alone, with no accumulated state. That is what lets render.mjs step
+  the film frame by frame into a video, and lets this same page play it live
+  in a browser (space to pause, ← → to scrub, R to restart).
+
+  The palette, type and easing are the locked product tokens from
+  components/theme/tokens.css and motion.css, dark mode: calm electric blue
+  for the accent, amber reserved for Palestras, pastel lifecycle states.
+-->
+<style>
+@font-face { font-family: "Geist"; src: url("fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; }
+@font-face { font-family: "Geist Mono"; src: url("fonts/GeistMono-Variable.woff2") format("woff2"); font-weight: 100 900; }
+
+:root {
+  --bg: #050507;
+  --background: #0d0d10;
+  --surface: #141419;
+  --surface-2: #1b1b22;
+  --fg: #ebebf0;
+  --muted: #9c9ca8;
+  --border: #26262e;
+  --accent: #6f97ee;
+  --accent-soft: #172239;
+  --danger: #e2607b;
+  --prov-bg: #102438; --prov-fg: #7cb8e8;
+  --run-bg: #0d2a1e;  --run-fg: #57c795;
+  --stop-bg: #222229; --stop-fg: #9c9ca8;
+  --exp-bg: #341721;  --exp-fg: #e88aa0;
+  --amber-bg: #2b2110; --amber: #dfaf54;
+  --sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --mono: "Geist Mono", ui-monospace, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: #000; overflow: hidden; }
+body { display: grid; place-items: center; font-family: var(--sans); color: var(--fg); -webkit-font-smoothing: antialiased; }
+
+#stage {
+  position: relative; width: 1920px; height: 1080px; overflow: hidden;
+  background: var(--bg); transform-origin: center; flex: none;
+}
+.render #stage { transform: none !important; }
+.layer { position: absolute; inset: 0; }
+.scene { position: absolute; inset: 0; display: none; will-change: transform; }
+
+/* atmosphere */
+.glow { position: absolute; width: 1400px; height: 1400px; border-radius: 50%; left: 0; top: 0; filter: blur(40px); }
+#vignette { background: radial-gradient(ellipse 75% 70% at 50% 50%, transparent 55%, rgba(0,0,0,.65) 100%); pointer-events: none; }
+#grain { opacity: .055; mix-blend-mode: screen; pointer-events: none; background-repeat: repeat; }
+#fade { background: #000; pointer-events: none; }
+
+/* type */
+.eyebrow { font-family: var(--mono); font-size: 22px; letter-spacing: .22em; text-transform: uppercase; color: var(--accent); font-weight: 500; }
+.title { font-weight: 600; letter-spacing: -0.045em; line-height: 1.0; }
+.sub { color: var(--muted); font-size: 30px; line-height: 1.4; letter-spacing: -0.01em; }
+.mono { font-family: var(--mono); }
+.grad { background: linear-gradient(100deg, #ebebf0 0%, #a9c0f5 45%, #6f97ee 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.grad-amber { background: linear-gradient(100deg, #f7dfa8 0%, #dfaf54 60%, #c58b2a 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.w { display: inline-block; will-change: transform, filter, opacity; }
+
+.card { position: absolute; background: linear-gradient(180deg, #17171d 0%, #121217 100%); border: 1px solid var(--border); border-radius: 24px; box-shadow: 0 40px 120px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.04); }
+.pill { display: inline-flex; align-items: center; gap: 12px; height: 46px; padding: 0 20px; border-radius: 999px; font-size: 21px; font-weight: 500; white-space: nowrap; }
+.dot { position: relative; width: 11px; height: 11px; border-radius: 50%; background: currentColor; }
+.dot i { position: absolute; inset: 0; border-radius: 50%; background: currentColor; }
+
+/* ---- s1 cold open ---- */
+#s1 .head { position: absolute; left: 0; right: 0; top: 330px; text-align: center; font-size: 168px; }
+#s1 .cursor { position: absolute; left: 954px; top: 506px; width: 12px; height: 68px; background: var(--accent); border-radius: 2px; }
+
+/* ---- s2 wordmark ---- */
+#s2 .mark { position: absolute; left: 0; right: 0; top: 368px; text-align: center; font-size: 250px; font-weight: 600; letter-spacing: -0.055em; line-height: 1; }
+#s2 .mark .ix { background: linear-gradient(160deg, #c9d8fb 0%, #6f97ee 55%, #3d6fd9 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+#s2 .beam { position: absolute; top: 660px; left: 960px; height: 2px; width: 0; background: linear-gradient(90deg, transparent, #6f97ee, transparent); box-shadow: 0 0 24px 2px rgba(111,151,238,.6); }
+#s2 .tag { position: absolute; left: 0; right: 0; top: 712px; text-align: center; font-size: 44px; color: var(--muted); letter-spacing: -0.02em; }
+
+/* ---- s3 labs ---- */
+#s3 .copy { position: absolute; left: 150px; top: 250px; width: 640px; }
+#s3 .copy .title { font-size: 96px; margin-top: 26px; position: relative; height: 200px; }
+#s3 .copy .title > div, #s3 .copy .sub > div { position: absolute; left: 0; top: 0; width: 100%; }
+#s3 .copy .sub { margin-top: 18px; position: relative; height: 170px; font-size: 29px; }
+#s3 .lab { left: 850px; top: 150px; width: 920px; height: 640px; overflow: hidden; }
+#s3 .lab .hd { display: flex; align-items: center; justify-content: space-between; padding: 30px 36px 26px; border-bottom: 1px solid var(--border); }
+#s3 .lab .hd b { font-size: 32px; font-weight: 600; letter-spacing: -0.02em; display: block; }
+#s3 .lab .hd span { font-family: var(--mono); font-size: 19px; color: var(--muted); display: block; margin-top: 6px; }
+#s3 .log { position: relative; overflow: hidden; padding: 24px 36px; height: 380px; font-family: var(--mono); font-size: 19px; line-height: 1; }
+#s3 .log .ln { position: absolute; left: 36px; right: 36px; display: flex; gap: 18px; white-space: nowrap; }
+#s3 .log .t { color: #5f5f6b; }
+#s3 .log .lv { width: 44px; color: var(--muted); }
+#s3 .log .ok { color: var(--run-fg); }
+#s3 .log .rp { color: var(--exp-fg); }
+#s3 .lab .ft { position: absolute; left: 0; right: 0; bottom: 0; height: 132px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 36px; background: rgba(255,255,255,.012); }
+#s3 .endpoint small, #s3 .ttl small { display: block; font-family: var(--mono); font-size: 16px; letter-spacing: .18em; color: var(--muted); text-transform: uppercase; }
+#s3 .endpoint div { font-family: var(--mono); font-size: 27px; margin-top: 10px; color: var(--fg); }
+#s3 .ttl { display: flex; align-items: center; gap: 20px; }
+#s3 .ttl .clock { font-family: var(--mono); font-size: 44px; font-weight: 500; font-variant-numeric: tabular-nums; margin-top: 4px; }
+#s3 .rail { position: absolute; left: 150px; right: 150px; top: 880px; height: 120px; }
+#s3 .rail .base, #s3 .rail .fill { position: absolute; top: 18px; left: 0; height: 2px; background: var(--border); width: 100%; }
+#s3 .rail .fill { background: linear-gradient(90deg, #3d6fd9, #6f97ee); box-shadow: 0 0 16px rgba(111,151,238,.7); width: 0; }
+#s3 .rail .node { position: absolute; top: 0; width: 38px; height: 38px; margin-left: -19px; border-radius: 50%; background: var(--bg); border: 2px solid var(--border); }
+#s3 .rail .node i { position: absolute; inset: 8px; border-radius: 50%; background: var(--accent); }
+#s3 .rail .lbl { position: absolute; top: 60px; transform: translateX(-50%); font-family: var(--mono); font-size: 19px; letter-spacing: .16em; text-transform: uppercase; white-space: nowrap; }
+
+/* ---- s4 palestras ---- */
+#s4 .left { position: absolute; left: 160px; top: 260px; width: 820px; }
+#s4 .coin { width: 136px; height: 136px; }
+#s4 .num { font-family: var(--mono); font-size: 200px; font-weight: 500; letter-spacing: -0.06em; line-height: 1; margin-top: 36px; font-variant-numeric: tabular-nums; transform-origin: left center; }
+#s4 .unit { font-family: var(--mono); font-size: 24px; letter-spacing: .32em; color: var(--amber); margin-top: 24px; }
+#s4 .sparks { position: absolute; left: 480px; top: 480px; }
+#s4 .sparks i { position: absolute; width: 10px; height: 10px; margin: -5px; border-radius: 50%; background: #f1c877; box-shadow: 0 0 12px #dfaf54; }
+#s4 .ledger { position: absolute; left: 1060px; top: 230px; width: 700px; }
+#s4 .row { position: absolute; left: 0; width: 700px; height: 112px; display: flex; align-items: center; gap: 28px; padding: 0 30px; border-radius: 20px; background: linear-gradient(180deg, #19171a, #141317); border: 1px solid #2c2720; }
+#s4 .row .amt { font-family: var(--mono); font-size: 40px; font-weight: 500; color: var(--amber); width: 124px; }
+#s4 .row b { font-size: 29px; font-weight: 500; letter-spacing: -0.015em; display: block; }
+#s4 .row span { font-family: var(--mono); font-size: 18px; color: var(--muted); display: block; margin-top: 8px; }
+#s4 .cap { position: absolute; left: 0; right: 0; top: 836px; text-align: center; font-size: 60px; }
+#s4 .fine { position: absolute; left: 0; right: 0; top: 930px; text-align: center; font-family: var(--mono); font-size: 20px; color: var(--muted); letter-spacing: .06em; }
+
+/* ---- s5 compete ---- */
+#s5 .copy { position: absolute; left: 150px; top: 110px; }
+#s5 .copy .title { font-size: 84px; margin-top: 20px; }
+#s5 .board { position: absolute; left: 150px; top: 350px; width: 930px; }
+#s5 .cat { position: absolute; top: 0; width: 174px; text-align: center; font-family: var(--mono); font-size: 17px; letter-spacing: .16em; color: var(--muted); text-transform: uppercase; }
+#s5 .tile { position: absolute; width: 174px; height: 124px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); display: grid; place-items: center; font-family: var(--mono); font-size: 36px; font-weight: 500; color: var(--fg); }
+#s5 .tile svg { position: absolute; right: 14px; top: 14px; width: 26px; height: 26px; }
+#s5 .fb { position: absolute; font-family: var(--mono); font-size: 17px; font-weight: 600; letter-spacing: .16em; color: #1a1305; background: var(--amber); padding: 9px 16px; border-radius: 999px; white-space: nowrap; box-shadow: 0 0 40px rgba(223,175,84,.5); }
+#s5 .lb { left: 1170px; top: 350px; width: 600px; height: 612px; padding: 30px; }
+#s5 .lb h4 { font-family: var(--mono); font-size: 17px; letter-spacing: .2em; color: var(--muted); font-weight: 500; display: flex; justify-content: space-between; }
+#s5 .team { position: absolute; left: 30px; right: 30px; height: 88px; display: flex; align-items: center; gap: 22px; border-radius: 14px; padding: 0 22px; }
+#s5 .team .rk { font-family: var(--mono); font-size: 22px; color: var(--muted); width: 32px; }
+#s5 .team .nm { font-size: 28px; font-weight: 500; flex: 1; letter-spacing: -0.01em; }
+#s5 .team .sc { font-family: var(--mono); font-size: 28px; font-variant-numeric: tabular-nums; }
+
+/* ---- s6 sandbox ---- */
+#s6 .copy { position: absolute; left: 150px; top: 200px; width: 720px; }
+#s6 .copy .title { font-size: 88px; margin-top: 24px; }
+#s6 .file { left: 150px; top: 640px; width: 700px; height: 250px; padding: 34px; }
+#s6 .file b { font-size: 32px; font-weight: 600; letter-spacing: -0.02em; }
+#s6 .file .hash { font-family: var(--mono); font-size: 19px; color: var(--muted); margin-top: 14px; }
+#s6 .file .iso { margin-top: 34px; font-family: var(--mono); font-size: 18px; letter-spacing: .12em; color: var(--prov-fg); display: flex; align-items: center; gap: 12px; }
+#s6 .tl { position: absolute; left: 990px; top: 170px; width: 780px; height: 760px; }
+#s6 .tl .spine { position: absolute; left: 20px; top: 20px; width: 2px; height: 0; background: linear-gradient(180deg, #e2607b, rgba(226,96,123,.1)); }
+#s6 .ev { position: absolute; left: 0; width: 780px; }
+#s6 .ev .pt { position: absolute; left: 11px; top: 26px; width: 20px; height: 20px; border-radius: 50%; background: var(--bg); border: 2px solid var(--danger); }
+#s6 .ev .bx { margin-left: 64px; padding: 22px 26px; border-radius: 18px; background: var(--surface); border: 1px solid var(--border); }
+#s6 .ev .k { font-family: var(--mono); font-size: 16px; letter-spacing: .18em; color: var(--muted); text-transform: uppercase; display: flex; justify-content: space-between; }
+#s6 .ev .k em { font-style: normal; color: var(--exp-fg); letter-spacing: .06em; }
+#s6 .ev .m { font-family: var(--mono); font-size: 22px; margin-top: 10px; color: var(--fg); white-space: nowrap; }
+#s6 .verdict { position: absolute; left: 1054px; top: 868px; }
+
+/* ---- s7 tenancy ---- */
+#s7 .copy { position: absolute; left: 0; right: 0; top: 110px; text-align: center; }
+#s7 .copy .title { font-size: 88px; margin-top: 22px; }
+#s7 .grid { position: absolute; left: 190px; top: 380px; width: 1540px; height: 460px; }
+#s7 .ten { position: absolute; width: 364px; height: 212px; }
+#s7 .ten svg.wall { position: absolute; inset: 0; overflow: visible; }
+#s7 .ten .in { position: absolute; inset: 0; padding: 26px 28px; }
+#s7 .ten b { font-family: var(--mono); font-size: 23px; font-weight: 500; display: block; }
+#s7 .ten span { font-family: var(--mono); font-size: 16px; color: var(--muted); letter-spacing: .14em; display: block; margin-top: 8px; }
+#s7 .ten .vms { position: absolute; left: 28px; bottom: 26px; display: flex; gap: 12px; }
+#s7 .ten .vms i { width: 42px; height: 30px; border-radius: 8px; background: var(--run-bg); border: 1px solid #1c5a3e; }
+#s7 .packet { position: absolute; width: 16px; height: 16px; margin: -8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 20px 4px rgba(111,151,238,.8); }
+#s7 .deny { position: absolute; font-family: var(--mono); font-size: 18px; letter-spacing: .14em; color: var(--exp-fg); background: var(--exp-bg); padding: 8px 14px; border-radius: 999px; white-space: nowrap; }
+#s7 .roles { position: absolute; left: 0; right: 0; top: 900px; display: flex; justify-content: center; gap: 18px; }
+#s7 .roles .pill { background: var(--surface); border: 1px solid var(--border); color: var(--fg); font-size: 24px; height: 58px; padding: 0 28px; }
+
+/* ---- s8 academy ---- */
+#s8 .copy { position: absolute; left: 0; right: 0; top: 130px; text-align: center; }
+#s8 .copy .title { font-size: 88px; margin-top: 22px; }
+#s8 .path { top: 400px; width: 386px; height: 440px; padding: 34px; }
+#s8 .path .n { font-family: var(--mono); font-size: 20px; color: var(--accent); letter-spacing: .1em; }
+#s8 .path b { display: block; font-size: 38px; font-weight: 600; letter-spacing: -0.03em; margin-top: 64px; line-height: 1.08; height: 84px; }
+#s8 .path .d { font-family: var(--mono); font-size: 19px; color: var(--muted); margin-top: 16px; }
+#s8 .path .mods { position: absolute; left: 34px; right: 34px; bottom: 34px; display: flex; gap: 6px; }
+#s8 .path .mods i { flex: 1; height: 34px; border-radius: 6px; background: var(--surface-2); }
+#s8 .foot { position: absolute; left: 0; right: 0; top: 910px; text-align: center; font-family: var(--mono); font-size: 21px; color: var(--muted); letter-spacing: .08em; }
+
+/* ---- s9 open source + end ---- */
+#s9 .wall { position: absolute; left: 0; right: 0; top: 150px; }
+#s9 .strip { position: absolute; left: 0; white-space: nowrap; font-size: 104px; font-weight: 600; letter-spacing: -0.04em; color: #1f1f27; }
+#s9 .strip span { margin-right: 80px; }
+#s9 .osc { position: absolute; left: 0; right: 0; top: 472px; text-align: center; font-size: 104px; }
+#s10 .mark { position: absolute; left: 0; right: 0; top: 380px; text-align: center; font-size: 190px; font-weight: 600; letter-spacing: -0.055em; line-height: 1; }
+#s10 .mark .ix { background: linear-gradient(160deg, #c9d8fb 0%, #6f97ee 55%, #3d6fd9 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+#s10 .tag { position: absolute; left: 0; right: 0; top: 616px; text-align: center; font-size: 50px; letter-spacing: -0.025em; }
+#s10 .by { position: absolute; left: 0; right: 0; top: 900px; text-align: center; font-family: var(--mono); font-size: 20px; letter-spacing: .22em; color: var(--muted); text-transform: uppercase; }
+
+/* live-playback chrome, hidden when rendering */
+#hud { position: fixed; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.08); }
+#hud i { display: block; height: 100%; width: 0; background: var(--accent); }
+.render #hud { display: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="layer" id="atmos">
+    <div class="glow" id="g1"></div>
+    <div class="glow" id="g2"></div>
+  </div>
+
+  <!-- 1 · cold open -->
+  <section class="scene" id="s1">
+    <div class="head title"><span class="w">Real</span> <span class="w">machines,</span><br><span class="w grad">not</span> <span class="w grad">slides.</span></div>
+    <div class="cursor"></div>
+  </section>
+
+  <!-- 2 · wordmark -->
+  <section class="scene" id="s2">
+    <div class="mark"></div>
+    <div class="beam"></div>
+    <div class="tag">The cyber range with a classroom brain.</div>
+  </section>
+
+  <!-- 3 · ephemeral labs -->
+  <section class="scene" id="s3">
+    <div class="copy">
+      <div class="eyebrow">Ephemeral labs</div>
+      <div class="title"><div class="t1"><span class="w">Born</span> <span class="w">on</span> <span class="w">request.</span></div><div class="t2"><span class="w">Reaped</span> <span class="w">on</span> <span class="w">schedule.</span></div></div>
+      <div class="sub"><div class="s1">Real Proxmox VMs and Docker containers, provisioned in seconds. Every log line streams live.</div><div class="s2">When the clock reaches zero, the reaper destroys the instance and hands the quota back.</div></div>
+    </div>
+    <div class="card lab">
+      <div class="hd">
+        <div><b>Log Triage</b><span>SOC Analyst · M3 · hau-bscs-3a</span></div>
+        <div class="pill" id="state"><span class="dot"><i></i></span><span id="stateTxt">Requested</span></div>
+      </div>
+      <div class="log" id="log"></div>
+      <div class="ft">
+        <div class="endpoint"><small>Endpoint</small><div id="ep">ssh student@10.24.7.31 -p 2211</div></div>
+        <div class="ttl">
+          <svg width="74" height="74" viewBox="0 0 74 74"><circle cx="37" cy="37" r="31" fill="none" stroke="#26262e" stroke-width="5"/><circle id="ring" cx="37" cy="37" r="31" fill="none" stroke="#6f97ee" stroke-width="5" stroke-linecap="round" transform="rotate(-90 37 37)" stroke-dasharray="194.8" stroke-dashoffset="0"/></svg>
+          <div><small>TTL</small><div class="clock" id="clock">90:00</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="rail" id="rail"><div class="base"></div><div class="fill"></div></div>
+  </section>
+
+  <!-- 4 · palestras -->
+  <section class="scene" id="s4">
+    <div class="left">
+      <svg class="coin" viewBox="0 0 104 104">
+        <defs><linearGradient id="cg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f7dfa8"/><stop offset=".6" stop-color="#dfaf54"/><stop offset="1" stop-color="#a8741f"/></linearGradient></defs>
+        <ellipse cx="52" cy="66" rx="42" ry="16" fill="#8a5f19"/>
+        <rect x="10" y="44" width="84" height="22" fill="#8a5f19"/>
+        <ellipse cx="52" cy="44" rx="42" ry="16" fill="url(#cg)"/>
+        <ellipse cx="52" cy="44" rx="26" ry="9" fill="none" stroke="#8a5f19" stroke-width="3" opacity=".55"/>
+      </svg>
+      <div class="num grad-amber" id="num">1,240</div>
+      <div class="unit">PALESTRAS</div>
+    </div>
+    <div class="sparks" id="sparks"></div>
+    <div class="ledger" id="ledger"></div>
+    <div class="cap title"><span class="w">Earned</span> <span class="w">by</span> <span class="w">progress.</span> <span class="w grad-amber">Never</span> <span class="w grad-amber">by</span> <span class="w grad-amber">repetition.</span></div>
+    <div class="fine">append-only ledger · daily caps per source · awards scale with solve count</div>
+  </section>
+
+  <!-- 5 · compete -->
+  <section class="scene" id="s5">
+    <div class="copy">
+      <div class="eyebrow">Capture the flag</div>
+      <div class="title"><span class="w">The</span> <span class="w grad">arena.</span></div>
+    </div>
+    <div class="board" id="board"></div>
+    <div class="card lb" id="lb"><h4><span>LEADERBOARD</span><span>LIVE</span></h4></div>
+  </section>
+
+  <!-- 6 · sandbox -->
+  <section class="scene" id="s6">
+    <div class="copy">
+      <div class="eyebrow" style="color:var(--exp-fg)">Malware sandbox</div>
+      <div class="title"><span class="w">Detonate.</span><br><span class="w">Observe.</span><br><span class="w grad">Understand.</span></div>
+    </div>
+    <div class="card file">
+      <b>invoice_0925.docm</b>
+      <div class="hash" id="hash"></div>
+      <div class="iso"><span class="dot" style="color:var(--prov-fg)"></span>NETWORK-ISOLATED DETONATOR</div>
+    </div>
+    <div class="tl" id="tl"><div class="spine"></div></div>
+    <div class="verdict pill" id="verdict" style="background:var(--exp-bg);color:var(--exp-fg);height:64px;font-size:26px;padding:0 28px"><span class="dot"></span>Malicious · 4 ATT&amp;CK techniques</div>
+  </section>
+
+  <!-- 7 · tenancy -->
+  <section class="scene" id="s7">
+    <div class="copy">
+      <div class="eyebrow">Multitenancy</div>
+      <div class="title"><span class="w">Every</span> <span class="w">class,</span> <span class="w grad">its</span> <span class="w grad">own</span> <span class="w grad">network.</span></div>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div class="roles" id="roles"></div>
+  </section>
+
+  <!-- 8 · academy -->
+  <section class="scene" id="s8">
+    <div class="copy">
+      <div class="eyebrow">Academy</div>
+      <div class="title"><span class="w">Four</span> <span class="w">paths.</span> <span class="w grad">Real</span> <span class="w grad">labs</span> <span class="w grad">in</span> <span class="w grad">each.</span></div>
+    </div>
+    <div id="paths"></div>
+    <div class="foot">grades pass back to Canvas · LTI 1.3</div>
+  </section>
+
+  <!-- 9 · open source -->
+  <section class="scene" id="s9">
+    <div class="wall" id="wall"></div>
+    <div class="osc title"><span class="w">Built</span> <span class="w">entirely</span> <span class="w">on</span> <span class="w grad">open</span> <span class="w grad">source.</span></div>
+  </section>
+
+  <!-- 10 · end card -->
+  <section class="scene" id="s10">
+    <div class="mark"></div>
+    <div class="tag title"><span class="w">Real</span> <span class="w">machines,</span> <span class="w grad">not</span> <span class="w grad">slides.</span></div>
+    <div class="by">A Holy Angel University research platform</div>
+  </section>
+
+  <div class="layer" id="vignette"></div>
+  <div class="layer" id="grain"></div>
+  <div class="layer" id="fade"></div>
+</div>
+<div id="hud"><i></i></div>
+
+<script>
+"use strict";
+const FPS = 60, DURATION = 60;
+
+/* ---------- math ---------- */
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+function bezier(x1, y1, x2, y2) {
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  const X = (t) => ((ax * t + bx) * t + cx) * t, Y = (t) => ((ay * t + by) * t + cy) * t;
+  const dX = (t) => (3 * ax * t + 2 * bx) * t + cx;
+  return (x) => {
+    if (x <= 0) return 0; if (x >= 1) return 1;
+    let t = x;
+    for (let i = 0; i < 8; i++) { const d = dX(t); if (Math.abs(d) < 1e-6) break; t -= (X(t) - x) / d; }
+    t = clamp(t);
+    return Y(t);
+  };
+}
+// Product easings (motion.css / tokens.css) plus two cinematic ones.
+const E = {
+  swift: bezier(0.16, 1, 0.3, 1),
+  soft: bezier(0.22, 0.61, 0.36, 1),
+  spring: bezier(0.34, 1.56, 0.64, 1),
+  inOut: bezier(0.65, 0, 0.35, 1),
+  in: bezier(0.55, 0, 1, 0.45),
+  lin: (x) => x,
+};
+const P = (t, start, dur, ease = E.swift) => ease(clamp((t - start) / dur));
+function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+
+/* ---------- styling helpers ---------- */
+function fx(el, { o = 1, x = 0, y = 0, s = 1, r = 0, b = 0, rx = 0, ry = 0, z = 0 } = {}) {
+  el.style.opacity = o;
+  el.style.transform = `translate3d(${x}px,${y}px,${z}px) rotate(${r}deg) rotateX(${rx}deg) rotateY(${ry}deg) scale(${s})`;
+  el.style.filter = b > 0.05 ? `blur(${b}px)` : "none";
+}
+// Apple-style word reveal: rises, un-blurs, fades in. `out` runs the exit.
+function words(root, t, start, { stagger = 0.08, dur = 0.9, y = 46, blur = 18, out = Infinity, outDur = 0.5, outY = -30 } = {}) {
+  root.querySelectorAll(".w").forEach((w, i) => {
+    const k = P(t, start + i * stagger, dur);
+    const q = P(t, out + i * stagger * 0.4, outDur, E.inOut);
+    fx(w, { o: k * (1 - q), y: (1 - k) * y + q * outY, b: (1 - k) * blur + q * 12 });
+  });
+}
+const $ = (s) => document.querySelector(s);
+function h(tag, cls, html, parent) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; if (parent) parent.appendChild(e); return e; }
+const fmt = (n) => Math.round(n).toLocaleString("en-US");
+
+/* ---------- scenes ---------- */
+const scenes = [];
+function scene(id, a, b, fn) { scenes.push({ el: document.getElementById(id), a, b, fn }); }
+
+/* 1 · cold open  0 → 4.3 */
+scene("s1", 0, 4.3, (t) => {
+  const cur = $("#s1 .cursor");
+  const blink = Math.floor(t / 0.42) % 2 === 0 ? 1 : 0.15;
+  cur.style.opacity = P(t, 0.15, 0.3) * (1 - P(t, 0.9, 0.25)) * blink;
+  words($("#s1 .head"), t, 0.95, { stagger: 0.17, dur: 1.1, y: 60, blur: 24, out: 3.55, outDur: 0.7, outY: -50 });
+  const root = $("#s1");
+  fx(root, { s: lerp(1.0, 1.05, P(t, 0, 4.3, E.lin)) });
+});
+
+/* 2 · wordmark  4.0 → 8.3 */
+const MARK = "Palestr";
+function buildMark(el) {
+  [...MARK].forEach((c) => h("span", "w", c, el));
+  const ix = h("span", "w ix", "IX", el);
+  return ix;
+}
+buildMark($("#s2 .mark"));
+buildMark($("#s10 .mark"));
+scene("s2", 4.0, 8.3, (t) => {
+  const letters = [...document.querySelectorAll("#s2 .mark .w")];
+  const out = P(t, 7.55, 0.75, E.inOut);
+  letters.forEach((w, i) => {
+    if (w.classList.contains("ix")) {
+      const k = P(t, 5.15, 0.7, E.spring);
+      const kk = P(t, 5.15, 0.25, E.soft);
+      fx(w, { o: kk * (1 - out), s: lerp(1.9, 1, k), b: (1 - kk) * 20 + out * 10, y: -out * 20 });
+    } else {
+      const k = P(t, 4.25 + i * 0.07, 1.0);
+      fx(w, { o: k * (1 - out), y: (1 - k) * 90 - out * 20, b: (1 - k) * 22 + out * 10 });
+    }
+  });
+  const beam = $("#s2 .beam");
+  const bk = P(t, 5.3, 1.3);
+  const bw = bk * 1100;
+  beam.style.width = bw + "px"; beam.style.left = 960 - bw / 2 + "px";
+  beam.style.opacity = (1 - P(t, 6.6, 1.0, E.soft)) * bk;
+  const tag = $("#s2 .tag");
+  const tk = P(t, 5.85, 1.0);
+  fx(tag, { o: tk * (1 - out), y: (1 - tk) * 24, b: (1 - tk) * 10 + out * 8 });
+  fx($("#s2"), { s: lerp(1.04, 1, P(t, 4.0, 4.3, E.soft)) * lerp(1, 0.94, out) });
+});
+
+/* 3 · labs  8.0 → 19.2 */
+const LOG = [
+  [9.35, "09:14:02", "info", "queue: job accepted · tenant hau-bscs-3a · quota 2/3"],
+  [9.85, "09:14:03", "info", "docker: pulling labs/log-triage:1.4"],
+  [10.35, "09:14:09", "info", "docker: layer 7f3a2c11 extracted (34.2 MB)"],
+  [10.85, "09:14:12", "info", "network: attached to bridge net-hau-bscs-3a"],
+  [11.35, "09:14:14", "info", "firewall: egress deny-all, allow 10.24.7.0/24"],
+  [11.85, "09:14:18", "info", "container: started, healthcheck 1/3"],
+  [12.45, "09:14:21", "ok", "healthcheck passed · ssh on 10.24.7.31:2211"],
+  [12.95, "09:14:22", "ok", "instance running · TTL reaper armed, 90 min"],
+];
+const REAP = [17.25, "10:44:22", "reap", "reaper: destroyed · quota released 2/3 → 1/3"];
+const logEl = $("#log");
+const logRows = [...LOG, REAP].map(([at, tm, lv, msg]) => {
+  const r = h("div", "ln", `<span class="t">${tm}</span><span class="lv ${lv === "ok" ? "ok" : lv === "reap" ? "rp" : ""}">${lv === "reap" ? "reap" : lv}</span><span class="${lv === "ok" ? "ok" : lv === "reap" ? "rp" : ""}">${msg}</span>`, logEl);
+  return { r, at };
+});
+const RAIL = [["Request", 9.0], ["Provision", 9.35], ["Expose", 13.1], ["Count down", 14.1], ["Reap", 17.25]];
+const railEl = $("#rail");
+const railNodes = RAIL.map(([name], i) => {
+  const x = (i / (RAIL.length - 1)) * 100;
+  const n = h("div", "node", "<i></i>", railEl); n.style.left = x + "%";
+  const l = h("div", "lbl", name, railEl); l.style.left = x + "%";
+  return { n, l };
+});
+const STATES = {
+  Requested: ["var(--stop-bg)", "var(--stop-fg)"],
+  Provisioning: ["var(--prov-bg)", "var(--prov-fg)"],
+  Running: ["var(--run-bg)", "var(--run-fg)"],
+  Expired: ["var(--exp-bg)", "var(--exp-fg)"],
+};
+function shake(k) { // motion.css plx-shake, as a function of progress
+  const pts = [[0, 0], [0.18, -5], [0.38, 4], [0.58, -3], [0.78, 2], [1, 0]];
+  for (let i = 1; i < pts.length; i++) if (k <= pts[i][0]) { const [a, va] = pts[i - 1], [b, vb] = pts[i]; return lerp(va, vb, (k - a) / (b - a)); }
+  return 0;
+}
+scene("s3", 8.0, 19.2, (t) => {
+  const exit = P(t, 18.45, 0.75, E.inOut);
+  // copy
+  const copy = $("#s3 .copy");
+  const ek = P(t, 8.2, 0.9);
+  fx($("#s3 .eyebrow"), { o: ek * (1 - exit), y: (1 - ek) * 20 });
+  words($("#s3 .t1"), t, 8.3, { stagger: 0.1, out: 14.2, outDur: 0.5 });
+  words($("#s3 .t2"), t, 14.55, { stagger: 0.1, out: 18.4, outDur: 0.55 });
+  const s1k = P(t, 8.75, 1.0) * (1 - P(t, 14.1, 0.45, E.inOut));
+  fx($("#s3 .s1"), { o: s1k, y: (1 - P(t, 8.75, 1.0)) * 20, b: (1 - s1k) * 8 });
+  const s2k = P(t, 14.95, 1.0) * (1 - exit);
+  fx($("#s3 .s2"), { o: s2k, y: (1 - P(t, 14.95, 1.0)) * 20, b: (1 - s2k) * 8 });
+
+  // lab card: arrives in 3D, settles, drifts
+  const card = $("#s3 .lab");
+  const ck = P(t, 8.35, 1.5);
+  const drift = P(t, 8.35, 10, E.lin);
+  const sh = t > 17.25 && t < 17.75 ? shake((t - 17.25) / 0.45) * 2.2 : 0;
+  fx(card, {
+    o: P(t, 8.35, 0.6, E.soft) * (1 - exit),
+    x: (1 - ck) * 160 + sh, y: (1 - ck) * 30 + exit * 40,
+    ry: lerp(-24, -5, ck) + lerp(0, 3, drift), rx: lerp(10, 2, ck),
+    s: lerp(0.9, 1, ck) * lerp(1, 0.94, exit), b: exit * 10,
+  });
+  card.style.transformOrigin = "0% 50%";
+  card.parentElement.style.perspective = "2400px";
+
+  // state badge
+  const st = t < 9.35 ? "Requested" : t < 12.95 ? "Provisioning" : t < 17.25 ? "Running" : "Expired";
+  const pill = $("#state");
+  const [bg, fg] = STATES[st];
+  pill.style.background = bg; pill.style.color = fg;
+  $("#stateTxt").textContent = st;
+  const changes = [9.35, 12.95, 17.25].filter((c) => t >= c);
+  const last = changes.length ? changes[changes.length - 1] : -9;
+  const pk = P(t, last, 0.4, E.spring);
+  fx(pill, { s: t - last < 0.4 ? lerp(0.86, 1, pk) : 1, o: st === "Provisioning" ? 0.78 + 0.22 * (0.5 + 0.5 * Math.cos((t - 9.35) * Math.PI * 2 / 1.8)) : 1 });
+  const ping = $("#state .dot i");
+  if (st === "Running") { const c = ((t - 12.95) % 1.4) / 1.4; const k = clamp(c / 0.8); fx(ping, { s: lerp(1, 2.6, k), o: 0.55 * (1 - k) }); }
+  else fx(ping, { o: 0 });
+
+  // log: lines rise in and the stack scrolls once it fills the pane
+  const LH = 40;
+  const shown = logRows.filter((r) => t >= r.at).length;
+  const reaped = t >= REAP[0];
+  logRows.forEach(({ r, at }, i) => {
+    const k = P(t, at, 0.45, E.soft);
+    const idx = i;
+    const scroll = Math.max(0, (reaped ? 9 : Math.min(shown, 8)) - 8);
+    const scrollK = reaped ? P(t, REAP[0], 0.5) : 1;
+    const y = 24 + idx * LH - scroll * LH * scrollK;
+    const dim = reaped && i < LOG.length ? lerp(1, 0.32, P(t, REAP[0], 0.6)) : 1;
+    r.style.top = "0px";
+    fx(r, { o: k * dim, y: y + (1 - k) * 10, b: (1 - k) * 4 });
+  });
+
+  // footer: endpoint + TTL
+  const epk = P(t, 13.1, 0.7);
+  const ep = $("#ep");
+  const full = "ssh student@10.24.7.31 -p 2211";
+  const n = Math.floor(clamp((t - 13.1) / 0.8) * full.length);
+  ep.textContent = t < 13.1 ? "—" : full.slice(0, n) + (n < full.length ? "▍" : "");
+  ep.style.color = reaped ? "#5f5f6b" : "var(--fg)";
+  ep.style.textDecoration = reaped ? "line-through" : "none";
+  // 90:00 ticks in real time, then the clock is fast-forwarded to zero
+  let secs = 5400;
+  if (t > 13.1) secs = 5400 - Math.floor(t - 13.1);
+  if (t > 14.3) secs = Math.round(lerp(5399, 0, P(t, 14.3, 2.95, E.in)));
+  const mm = String(Math.floor(secs / 60)).padStart(2, "0"), ss = String(secs % 60).padStart(2, "0");
+  const clock = $("#clock");
+  clock.textContent = t < 13.1 ? "--:--" : `${mm}:${ss}`;
+  clock.style.color = secs < 600 && t > 14.3 ? "var(--exp-fg)" : "var(--fg)";
+  const ring = $("#ring");
+  ring.setAttribute("stroke-dashoffset", String(194.8 * (1 - secs / 5400)));
+  ring.setAttribute("stroke", secs < 600 && t > 14.3 ? "#e88aa0" : "#6f97ee");
+  fx($("#s3 .ft"), { o: 0.35 + 0.65 * epk });
+
+  // rail
+  const rk = P(t, 8.6, 0.9);
+  fx(railEl, { o: rk * (1 - exit), y: (1 - rk) * 30 });
+  // fill runs between the node timestamps
+  let prog = 0;
+  for (let i = 0; i < RAIL.length - 1; i++) {
+    const a = RAIL[i][1], b = RAIL[i + 1][1];
+    if (t >= a) prog = i + P(t, a, Math.min(b - a, 1.2), E.inOut);
+  }
+  $("#rail .fill").style.width = (t < RAIL[0][1] ? 0 : (prog / (RAIL.length - 1)) * 100) + "%";
+  railNodes.forEach(({ n, l }, i) => {
+    const on = t >= RAIL[i][1];
+    const k = P(t, RAIL[i][1], 0.5, E.spring);
+    const reap = i === RAIL.length - 1;
+    n.style.borderColor = on ? (reap ? "#e88aa0" : "#6f97ee") : "#26262e";
+    n.style.boxShadow = on ? `0 0 ${24 * k}px ${reap ? "rgba(232,138,160,.6)" : "rgba(111,151,238,.6)"}` : "none";
+    fx(n.firstChild, { s: on ? k : 0, o: on ? 1 : 0 });
+    n.firstChild.style.background = reap ? "#e88aa0" : "#6f97ee";
+    l.style.color = on ? "var(--fg)" : "#5f5f6b";
+  });
+});
+
+/* 4 · palestras  19.0 → 26.6 */
+const LEDGER = [
+  [20.1, 150, "Module complete", "SOC Analyst · M4 Log Triage"],
+  [21.0, 80, "Flag captured", "web-200 · Stored XSS"],
+  [21.8, 25, "First blood", "bonus · first solve in section"],
+  [22.55, 10, "Streak kept", "day 12 · daily cap respected"],
+];
+const ledgerEl = $("#ledger");
+const ledgerRows = LEDGER.map(([at, amt, what, detail]) => ({ at, amt, el: h("div", "row", `<div class="amt">+${amt}</div><div><b>${what}</b><span>${detail}</span></div>`, ledgerEl) }));
+const sparksEl = $("#sparks");
+const SPARKS = 16;
+const sparkEls = Array.from({ length: LEDGER.length * SPARKS }, () => h("i", null, null, sparksEl));
+const sparkDirs = (() => { const r = rng(7); return sparkEls.map(() => ({ a: r() * Math.PI * 2, d: 140 + r() * 260, s: 0.5 + r() * 0.9 })); })();
+function award(k) { // motion.css plx-award, scale channel only
+  if (k < 0.45) return lerp(1, 1.08, E.soft(k / 0.45));
+  if (k < 0.7) return lerp(1.08, 0.985, (k - 0.45) / 0.25);
+  return lerp(0.985, 1, (k - 0.7) / 0.3);
+}
+scene("s4", 19.0, 26.6, (t) => {
+  const exit = P(t, 25.85, 0.75, E.inOut);
+  const lk = P(t, 19.15, 1.1);
+  fx($("#s4 .left"), { o: lk * (1 - exit), y: (1 - lk) * 40, b: (1 - lk) * 16 + exit * 10, s: lerp(1, 0.96, exit) });
+  fx($("#s4 .coin"), { r: lerp(-14, 0, P(t, 19.15, 1.4, E.spring)), s: lerp(0.6, 1, P(t, 19.15, 1.0, E.spring)) });
+  // counter
+  let total = 1240, pop = 1;
+  LEDGER.forEach(([at, amt]) => { total += amt * P(t, at + 0.1, 0.7, E.soft); if (t >= at && t < at + 0.55) pop = award((t - at) / 0.55); });
+  const num = $("#num");
+  num.textContent = fmt(total);
+  num.style.transform = `scale(${pop})`;
+  // ledger rows stack downward
+  ledgerRows.forEach(({ at, el }, i) => {
+    const k = P(t, at, 0.8);
+    fx(el, { o: k * (1 - exit), x: (1 - k) * 80 + exit * 40, y: i * 132, b: (1 - k) * 12 + exit * 8 });
+  });
+  // sparks from the number on each award
+  LEDGER.forEach(([at], j) => {
+    for (let i = 0; i < SPARKS; i++) {
+      const e = sparkEls[j * SPARKS + i], d = sparkDirs[j * SPARKS + i];
+      const k = clamp((t - at) / 0.9);
+      if (k <= 0 || k >= 1) { e.style.opacity = 0; continue; }
+      const kk = E.swift(k);
+      fx(e, { o: 1 - k, x: Math.cos(d.a) * d.d * kk, y: Math.sin(d.a) * d.d * 0.6 * kk, s: d.s * (1 - k * 0.6) });
+    }
+  });
+  words($("#s4 .cap"), t, 23.4, { stagger: 0.09, out: 25.8, outDur: 0.6 });
+  const fk = P(t, 24.3, 1.0);
+  fx($("#s4 .fine"), { o: fk * (1 - exit), y: (1 - fk) * 14 });
+});
+
+/* 5 · compete  26.4 → 34.2 */
+const CATS = ["Web", "Pwn", "Crypto", "Forensics", "Rev"];
+const boardEl = $("#board");
+const TW = 174, TH = 124, GAP = 15;
+CATS.forEach((c, i) => { const e = h("div", "cat", c, boardEl); e.style.left = i * (TW + GAP) + "px"; });
+const tiles = [];
+for (let r = 0; r < 4; r++) for (let c = 0; c < 5; c++) {
+  const e = h("div", "tile", `${(r + 1) * 100}<svg viewBox="0 0 26 26"><path d="M6 13.5l4.5 4.5L20 8.5" fill="none" stroke="#6f97ee" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="24" stroke-dashoffset="24"/></svg>`, boardEl);
+  e.style.left = c * (TW + GAP) + "px"; e.style.top = 48 + r * (TH + GAP) + "px";
+  tiles.push({ e, r, c });
+}
+const SOLVES = [[27.9, 0, 0], [28.3, 2, 0], [28.65, 1, 1], [29.2, 3, 2, true], [29.8, 0, 1], [30.2, 4, 0], [30.6, 3, 0], [31.0, 1, 0], [31.35, 2, 1], [31.7, 0, 2]];
+const solveAt = {}; SOLVES.forEach(([at, c, r, fb]) => (solveAt[`${r}-${c}`] = { at, fb }));
+const fbEl = h("div", "fb", "FIRST BLOOD", boardEl);
+const TEAMS = [
+  { n: "0xHAU", s: [2150, 2150, 2450] },
+  { n: "null_pointers", s: [2300, 2300, 2300] },
+  { n: "rootkit_rats", s: [1980, 2380, 2380] },
+  { n: "blue_team_six", s: [1720, 1720, 1720] },
+  { n: "segfault_society", s: [1540, 1540, 1640] },
+];
+const LB_T = [26.4, 29.3, 31.5];
+const lbEl = $("#lb");
+const teamEls = TEAMS.map((tm) => ({ ...tm, el: h("div", "team", `<span class="rk"></span><span class="nm">${tm.n}</span><span class="sc"></span>`, lbEl) }));
+const rankAt = (k) => TEAMS.map((tm, i) => i).sort((a, b) => TEAMS[b].s[k] - TEAMS[a].s[k]);
+scene("s5", 26.4, 34.2, (t) => {
+  const exit = P(t, 33.45, 0.75, E.inOut);
+  fx($("#s5 .eyebrow"), { o: P(t, 26.55, 0.8) * (1 - exit) });
+  words($("#s5 .copy .title"), t, 26.65, { stagger: 0.12, out: 33.35, outDur: 0.55 });
+  const bk = P(t, 26.8, 1.2);
+  fx(boardEl, { o: (1 - exit), y: exit * 30, b: exit * 10 });
+  boardEl.querySelectorAll(".cat").forEach((c, i) => fx(c, { o: P(t, 26.9 + i * 0.05, 0.6), y: (1 - P(t, 26.9 + i * 0.05, 0.6)) * 10 }));
+  tiles.forEach(({ e, r, c }) => {
+    const k = P(t, 27.0 + (r + c) * 0.06, 0.8);
+    const sv = solveAt[`${r}-${c}`];
+    const solved = sv && t >= sv.at;
+    const sk = sv ? P(t, sv.at, 0.5, E.spring) : 0;
+    let s = lerp(0.9, 1, k);
+    if (solved) s *= t - sv.at < 0.5 ? lerp(0.9, 1, sk) : 1;
+    fx(e, { o: k, s, y: (1 - k) * 24, ry: solved ? lerp(90, 0, P(t, sv.at, 0.5, E.swift)) * (t - sv.at < 0.5 ? 1 : 0) : 0 });
+    const fb = sv && sv.fb && solved;
+    e.style.background = solved ? (fb ? "#2b2110" : "var(--accent-soft)") : "var(--surface)";
+    e.style.borderColor = solved ? (fb ? "#dfaf54" : "#3a5896") : "var(--border)";
+    e.style.color = solved ? (fb ? "#dfaf54" : "#a9c0f5") : "var(--fg)";
+    e.style.boxShadow = fb ? `0 0 ${50 * (1 - P(t, sv.at + 0.3, 2.2, E.soft)) + 14}px rgba(223,175,84,.45)` : "none";
+    const path = e.querySelector("path");
+    path.setAttribute("stroke", fb ? "#dfaf54" : "#6f97ee");
+    path.setAttribute("stroke-dashoffset", String(24 * (1 - (solved ? P(t, sv.at + 0.15, 0.4, E.soft) : 0))));
+  });
+  // first-blood callout above its tile
+  const fbT = SOLVES.find((s) => s[3]);
+  const fk = P(t, fbT[0] + 0.15, 0.55, E.spring);
+  fbEl.style.left = fbT[1] * (TW + GAP) + TW / 2 - 78 + "px";
+  fbEl.style.top = 48 + fbT[2] * (TH + GAP) - 26 + "px";
+  fx(fbEl, { o: P(t, fbT[0] + 0.15, 0.2) * (1 - P(t, 32.8, 0.5)), s: lerp(0.5, 1, fk), y: (1 - fk) * 12 });
+  // leaderboard
+  const lk = P(t, 27.1, 1.2);
+  fx(lbEl, { o: lk * (1 - exit), x: (1 - lk) * 80, b: (1 - lk) * 14 + exit * 10 });
+  let stage = 0; LB_T.forEach((tt, i) => { if (t >= tt) stage = i; });
+  const prevRank = rankAt(Math.max(0, stage - 1)), curRank = rankAt(stage);
+  const mk = stage === 0 ? 1 : P(t, LB_T[stage], 0.9, E.inOut);
+  teamEls.forEach((tm, i) => {
+    const r0 = prevRank.indexOf(i), r1 = curRank.indexOf(i);
+    const y = 84 + lerp(r0, r1, mk) * 96;
+    const rk = P(t, 27.4 + r1 * 0.08, 0.7);
+    fx(tm.el, { o: rk, y: y + (1 - rk) * 16 });
+    const prevS = tm.s[Math.max(0, stage - 1)], curS = tm.s[stage];
+    tm.el.querySelector(".sc").textContent = fmt(lerp(prevS, curS, stage === 0 ? 1 : P(t, LB_T[stage], 0.8, E.soft)));
+    tm.el.querySelector(".rk").textContent = String(r1 + 1).padStart(2, "0");
+    const climbing = stage > 0 && r1 < r0 && t - LB_T[stage] < 1.8;
+    const lead = r1 === 0;
+    tm.el.style.background = climbing ? "var(--accent-soft)" : lead ? "rgba(255,255,255,.03)" : "transparent";
+    tm.el.querySelector(".sc").style.color = lead ? "var(--amber)" : "var(--fg)";
+  });
+});
+
+/* 6 · sandbox  34.0 → 41.2 */
+const HASH = "sha256 9f2c41e0b7a3d58c16e4a0f79b2d3c85e1a6470f";
+const EVENTS = [
+  [36.0, "static", "T1027", "vba macro extracted · obfuscation 0.82"],
+  [36.9, "process", "T1059.001", "winword.exe → powershell.exe -enc JABz…"],
+  [37.8, "registry", "T1547.001", "HKCU\\…\\Run\\updater → persistence"],
+  [38.7, "network", "T1071.004", "dns beacon *.duckdns.org → sinkholed"],
+];
+const tlEl = $("#tl");
+const evEls = EVENTS.map(([at, k, tech, msg], i) => {
+  const e = h("div", "ev", `<div class="pt"></div><div class="bx"><div class="k"><span>${k}</span><em>${tech}</em></div><div class="m">${msg}</div></div>`, tlEl);
+  e.style.top = i * 168 + "px";
+  return { e, at };
+});
+scene("s6", 34.0, 41.2, (t) => {
+  const exit = P(t, 40.45, 0.75, E.inOut);
+  fx($("#s6 .eyebrow"), { o: P(t, 34.15, 0.8) * (1 - exit) });
+  words($("#s6 .copy .title"), t, 34.3, { stagger: 0.28, dur: 1.0, out: 40.35, outDur: 0.55 });
+  const fk = P(t, 34.9, 1.1);
+  fx($("#s6 .file"), { o: fk * (1 - exit), y: (1 - fk) * 40 + exit * 20, b: (1 - fk) * 12 + exit * 8 });
+  const n = Math.floor(clamp((t - 35.3) / 0.9) * HASH.length);
+  $("#hash").textContent = HASH.slice(0, n) + "…";
+  const iso = $("#s6 .iso .dot");
+  iso.style.opacity = 0.6 + 0.4 * Math.cos(t * Math.PI * 2 / 1.8);
+  // spine grows through the events
+  const sk = P(t, 35.8, 3.4, E.inOut);
+  $("#s6 .spine").style.height = sk * 560 + "px";
+  fx(tlEl, { o: 1 - exit, b: exit * 10 });
+  evEls.forEach(({ e, at }) => {
+    const k = P(t, at, 0.8);
+    fx(e, { o: k, x: (1 - k) * 60, b: (1 - k) * 10 });
+    fx(e.querySelector(".pt"), { s: lerp(0.3, 1, P(t, at, 0.5, E.spring)) });
+    e.querySelector(".pt").style.background = t >= at + 0.2 ? "#e2607b" : "var(--bg)";
+  });
+  const vk = P(t, 39.45, 0.5, E.spring);
+  fx($("#verdict"), { o: P(t, 39.45, 0.2) * (1 - exit), s: lerp(0.82, 1, vk) });
+  $("#verdict").style.boxShadow = `0 0 ${60 * (1 - P(t, 39.6, 1.4, E.soft))}px rgba(226,96,123,.5)`;
+});
+
+/* 7 · tenancy  41.0 → 47.3 */
+const TENANTS = [["hau-bscs-3a", 2031], ["hau-bscs-3b", 2032], ["hau-bsit-2a", 2041], ["hau-bsit-2c", 2043], ["hau-bscs-4a", 2051], ["hau-bsis-1b", 2061], ["hau-ctf-oct", 2099], ["hau-faculty", 2100]];
+const gridEl = $("#grid");
+const PER = 2 * (364 + 212) - 8 * 18 + 2 * Math.PI * 18;
+const tenEls = TENANTS.map(([name, vlan], i) => {
+  const e = h("div", "ten", `<svg class="wall" width="364" height="212"><rect x="1" y="1" width="362" height="210" rx="18" fill="rgba(20,20,25,.85)" stroke="#26262e" stroke-width="1.5"/><rect class="draw" x="1" y="1" width="362" height="210" rx="18" fill="none" stroke="#6f97ee" stroke-width="2" stroke-dasharray="${PER}" stroke-dashoffset="${PER}"/></svg><div class="in"><b>${name}</b><span>VLAN ${vlan} · ${2 + (i % 3)}/4 QUOTA</span><div class="vms">${"<i></i>".repeat(2 + (i % 3))}</div></div>`, gridEl);
+  e.style.left = (i % 4) * (364 + 28) + "px"; e.style.top = Math.floor(i / 4) * (212 + 36) + "px";
+  return e;
+});
+const packet = h("div", "packet", null, gridEl);
+const deny = h("div", "deny", "EGRESS DENIED", gridEl);
+const ROLES = ["Student", "Teacher", "Administrator", "Superadministrator"];
+const roleEls = ROLES.map((r) => h("div", "pill", r, $("#roles")));
+scene("s7", 41.0, 47.3, (t) => {
+  const exit = P(t, 46.55, 0.75, E.inOut);
+  fx($("#s7 .eyebrow"), { o: P(t, 41.15, 0.8) * (1 - exit) });
+  words($("#s7 .copy .title"), t, 41.3, { stagger: 0.08, out: 46.45, outDur: 0.55 });
+  fx(gridEl, { o: 1 - exit, s: lerp(1, 0.96, exit), b: exit * 10 });
+  tenEls.forEach((e, i) => {
+    const k = P(t, 41.7 + i * 0.07, 0.9);
+    fx(e, { o: k, y: (1 - k) * 40, s: lerp(0.94, 1, k) });
+    const d = e.querySelector(".draw");
+    d.setAttribute("stroke-dashoffset", String(PER * (1 - P(t, 42.5 + i * 0.09, 1.2, E.inOut))));
+    // the blocked cell's wall flares red at the hit
+    const hit = i === 1 && t >= 44.35;
+    const hk = P(t, 44.35, 1.0, E.soft);
+    d.setAttribute("stroke", hit ? (hk < 1 ? "#e88aa0" : "#6f97ee") : "#6f97ee");
+    d.style.filter = hit && hk < 1 ? `drop-shadow(0 0 ${16 * (1 - hk)}px #e2607b)` : "none";
+    if (i === 1 && t >= 44.35 && t < 44.8) e.style.transform += ` translateX(${shake((t - 44.35) / 0.45) * 1.6}px)`;
+  });
+  // a packet leaves tenant 0 for tenant 1, and is refused at the wall
+  const pk = P(t, 43.6, 0.75, E.in);
+  const x0 = 250, x1 = 364 + 28 + 2, y0 = 150;
+  const bounce = P(t, 44.35, 0.6, E.swift);
+  const px = t < 44.35 ? lerp(x0, x1, pk) : lerp(x1, x1 - 60, bounce);
+  fx(packet, { o: P(t, 43.5, 0.2) * (1 - P(t, 44.6, 0.5)), x: px, y: y0 });
+  const dk = P(t, 44.4, 0.5, E.spring);
+  deny.style.left = x1 - 88 + "px"; deny.style.top = "-62px";
+  fx(deny, { o: P(t, 44.4, 0.2) * (1 - P(t, 45.9, 0.5)), s: lerp(0.6, 1, dk), y: (1 - dk) * 10 });
+  roleEls.forEach((r, i) => {
+    const k = P(t, 45.0 + i * 0.1, 0.8);
+    fx(r, { o: k * (1 - exit), y: (1 - k) * 24, b: (1 - k) * 8 });
+  });
+});
+
+/* 8 · academy  47.1 → 52.5 */
+const PATHS = [["SOC Analyst", 14, 38, 0.72], ["Web Exploitation", 12, 30, 0.5], ["Network Defense", 10, 26, 0.3], ["Digital Forensics", 11, 32, 0.18]];
+const pathsEl = $("#paths");
+const pathEls = PATHS.map(([title, mods, hrs], i) => {
+  const e = h("div", "card path", `<div class="n">0${i + 1}</div><b>${title}</b><div class="d">${mods} modules · ${hrs}h</div><div class="mods">${"<i></i>".repeat(mods)}</div>`, pathsEl);
+  e.style.left = 150 + i * (386 + 18) + "px";
+  return e;
+});
+scene("s8", 47.1, 52.5, (t) => {
+  const exit = P(t, 51.75, 0.75, E.inOut);
+  fx($("#s8 .eyebrow"), { o: P(t, 47.25, 0.8) * (1 - exit) });
+  words($("#s8 .copy .title"), t, 47.4, { stagger: 0.08, out: 51.65, outDur: 0.55 });
+  pathEls.forEach((e, i) => {
+    const k = P(t, 47.9 + i * 0.12, 1.1);
+    fx(e, { o: k * (1 - exit), y: (1 - k) * 90 + exit * 20, ry: (1 - k) * -18, b: (1 - k) * 14 + exit * 10 });
+    const mods = [...e.querySelectorAll(".mods i")];
+    const done = PATHS[i][3] * mods.length;
+    mods.forEach((m, j) => {
+      const on = P(t, 48.8 + i * 0.12 + j * 0.07, 0.35, E.soft) * (j < done ? 1 : 0);
+      m.style.background = on > 0.01 ? `rgba(111,151,238,${lerp(0.08, 1, on)})` : "var(--surface-2)";
+      m.style.boxShadow = on > 0.5 ? "0 0 12px rgba(111,151,238,.45)" : "none";
+    });
+  });
+  const fk = P(t, 49.6, 1.0);
+  fx($("#s8 .foot"), { o: fk * (1 - exit), y: (1 - fk) * 12 });
+});
+
+/* 9 · open source  52.3 → 56.2 */
+const STACK = ["Proxmox VE", "Docker", "PostgreSQL", "Redis", "FastAPI", "MinIO", "Next.js", "WebAuthn", "Caddy", "LTI 1.3", "React", "SQLAlchemy", "Traefik", "RQ", "Argon2", "Tailwind"];
+const wallEl = $("#wall");
+const strips = [0, 1, 2, 3, 4, 5].map((i) => {
+  const r = rng(i + 3);
+  const list = [...STACK, ...STACK].sort(() => r() - 0.5);
+  const e = h("div", "strip", list.map((s) => `<span>${s}</span>`).join(""), wallEl);
+  e.style.top = i * 136 + "px";
+  return e;
+});
+scene("s9", 52.3, 56.4, (t) => {
+  const exit = P(t, 55.65, 0.75, E.inOut);
+  const wk = P(t, 52.3, 1.2, E.soft);
+  strips.forEach((e, i) => {
+    const dir = i % 2 ? 1 : -1;
+    const x = (dir > 0 ? -1400 : -200) + dir * (t - 52.3) * (90 + i * 14);
+    fx(e, { o: wk * (1 - exit), x });
+  });
+  words($("#s9 .osc"), t, 52.7, { stagger: 0.09, out: 55.55, outDur: 0.6 });
+});
+
+/* 10 · end card  56.0 → 60 */
+scene("s10", 56.0, 60, (t) => {
+  const letters = [...document.querySelectorAll("#s10 .mark .w")];
+  letters.forEach((w, i) => {
+    const k = w.classList.contains("ix") ? P(t, 56.75, 0.8, E.spring) : P(t, 56.1 + i * 0.05, 1.0);
+    const kk = w.classList.contains("ix") ? P(t, 56.75, 0.3, E.soft) : k;
+    fx(w, { o: kk, y: w.classList.contains("ix") ? 0 : (1 - k) * 60, s: w.classList.contains("ix") ? lerp(1.6, 1, k) : 1, b: (1 - kk) * 18 });
+  });
+  words($("#s10 .tag"), t, 57.3, { stagger: 0.1 });
+  const bk = P(t, 58.0, 1.0);
+  fx($("#s10 .by"), { o: bk, y: (1 - bk) * 10 });
+  fx($("#s10"), { s: lerp(1.03, 1, P(t, 56.0, 4, E.soft)) });
+});
+
+/* ---------- atmosphere: accent glow drifts and re-tints per chapter ---------- */
+const GLOW = [ // t, color A, color B, alpha
+  [0, "#6f97ee", "#3d6fd9", 0.0],
+  [1.2, "#6f97ee", "#3d6fd9", 0.14],
+  [4.0, "#6f97ee", "#8a5cf0", 0.22],
+  [8.2, "#6f97ee", "#57c795", 0.16],
+  [16, "#6f97ee", "#e88aa0", 0.16],
+  [19.2, "#dfaf54", "#c58b2a", 0.2],
+  [26.5, "#6f97ee", "#dfaf54", 0.15],
+  [34.2, "#e2607b", "#6f2640", 0.18],
+  [41.2, "#6f97ee", "#57c795", 0.14],
+  [47.2, "#6f97ee", "#3d6fd9", 0.16],
+  [52.4, "#6f97ee", "#8a5cf0", 0.1],
+  [56.2, "#6f97ee", "#3d6fd9", 0.2],
+  [60, "#6f97ee", "#3d6fd9", 0.2],
+];
+const hex = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+const mix = (a, b, k) => { const A = hex(a), B = hex(b); return A.map((v, i) => Math.round(lerp(v, B[i], k))); };
+function glowAt(t) {
+  let i = 0; while (i < GLOW.length - 2 && t >= GLOW[i + 1][0]) i++;
+  const [ta, a1, a2, aa] = GLOW[i], [tb, b1, b2, ba] = GLOW[i + 1];
+  const k = E.inOut(clamp((t - ta) / Math.min(1.4, tb - ta)));
+  return { c1: mix(a1, b1, k), c2: mix(a2, b2, k), a: lerp(aa, ba, k) };
+}
+function atmosphere(t) {
+  const { c1, c2, a } = glowAt(t);
+  const g1 = $("#g1"), g2 = $("#g2");
+  g1.style.background = `radial-gradient(circle, rgba(${c1},${a}) 0%, rgba(${c1},0) 62%)`;
+  g2.style.background = `radial-gradient(circle, rgba(${c2},${a * 0.8}) 0%, rgba(${c2},0) 62%)`;
+  g1.style.transform = `translate(${-200 + Math.sin(t * 0.21) * 260}px, ${-520 + Math.cos(t * 0.17) * 120}px)`;
+  g2.style.transform = `translate(${920 + Math.cos(t * 0.19) * 240}px, ${160 + Math.sin(t * 0.23) * 140}px)`;
+  const fade = 1 - P(t, 0, 0.35, E.soft) + P(t, 59.25, 0.75, E.inOut);
+  $("#fade").style.opacity = clamp(fade);
+}
+
+/* ---------- film grain, deterministic per frame ---------- */
+(function grain() {
+  const c = document.createElement("canvas"); c.width = c.height = 256;
+  const x = c.getContext("2d"), d = x.createImageData(256, 256), r = rng(42);
+  for (let i = 0; i < d.data.length; i += 4) { const v = r() * 255; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; }
+  x.putImageData(d, 0, 0);
+  $("#grain").style.backgroundImage = `url(${c.toDataURL()})`;
+})();
+
+/* ---------- render ---------- */
+function renderAt(t) {
+  atmosphere(t);
+  for (const s of scenes) {
+    const on = t >= s.a && t < s.b;
+    s.el.style.display = on ? "block" : "none";
+    if (on) s.fn(t);
+  }
+  const f = Math.floor(t * FPS), r = rng(f + 1);
+  $("#grain").style.backgroundPosition = `${Math.floor(r() * 256)}px ${Math.floor(r() * 256)}px`;
+  $("#hud i").style.width = (t / DURATION) * 100 + "%";
+}
+window.renderAt = renderAt;
+window.FILM = { FPS, DURATION };
+
+/* ---------- live playback ---------- */
+const params = new URLSearchParams(location.search);
+if (params.has("render")) {
+  document.documentElement.classList.add("render");
+  renderAt(Number(params.get("t") || 0));
+} else {
+  const stage = $("#stage");
+  const fit = () => { const s = Math.min(innerWidth / 1920, innerHeight / 1080); stage.style.transform = `scale(${s})`; };
+  addEventListener("resize", fit); fit();
+  let t0 = null, offset = Number(params.get("t") || 0), paused = false, now = offset;
+  const loop = (ms) => {
+    if (!paused) { if (t0 === null) t0 = ms - offset * 1000; now = ((ms - t0) / 1000) % DURATION; }
+    renderAt(now); requestAnimationFrame(loop);
+  };
+  addEventListener("keydown", (e) => {
+    if (e.code === "Space") { paused = !paused; if (!paused) { offset = now; t0 = null; } }
+    if (e.code === "ArrowRight" || e.code === "ArrowLeft") { now = clamp(now + (e.code === "ArrowRight" ? 2 : -2), 0, DURATION - 0.01); offset = now; t0 = null; }
+    if (e.code === "KeyR") { offset = 0; now = 0; t0 = null; }
+  });
+  document.fonts.ready.then(() => requestAnimationFrame(loop));
+}
+</script>
+</body>
+</html>
